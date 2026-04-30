@@ -1,0 +1,970 @@
+"""
+Chance Creation Analysis — UI Components
+=========================================
+Dash components for the Chance Creation card inside
+Offensive Phase → Build-up.
+
+Follows the exact same patterns as general_buildup_cards.py and
+final_third_cards.py.
+"""
+
+from __future__ import annotations
+
+from dash import html, dcc
+import plotly.graph_objects as go
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONSTANTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ORIGIN_LABELS = [
+    "Set Piece", "High Regain", "Counter", "Cross", "Through Ball", "Combination",
+]
+MATRIX_ROWS = ["N", "xG", "SoT%", "GS"]
+
+ORIGIN_COLORS = {
+    "Set Piece":    "#22c55e",   # green
+    "High Regain":  "#ef4444",   # red — aggressive pressing recovery
+    "Counter":      "#f97316",   # orange
+    "Cross":        "#06b6d4",   # cyan
+    "Through Ball": "#8b5cf6",   # purple
+    "Combination":  "#3b82f6",   # blue — patient build-up
+    "TOTAL":        "#8a1f33",   # primary
+}
+
+ORIGIN_ICONS = {
+    "Set Piece":    "bi-flag-fill",
+    "High Regain":  "bi-shield-fill-exclamation",
+    "Counter":      "bi-lightning-charge-fill",
+    "Cross":        "bi-arrow-up-right",
+    "Through Ball": "bi-chevron-double-up",
+    "Combination":  "bi-shuffle",
+}
+
+TIER_META = {
+    "level_3_converted": {
+        "label": "Converted",
+        "color": "#22c55e",
+        "icon": "bi-check-circle-fill",
+        "desc": "Goal scored",
+    },
+    "level_2_threat": {
+        "label": "Big Chance",
+        "color": "#f97316",
+        "icon": "bi-exclamation-triangle-fill",
+        "desc": "On target · xG ≥ 0.20",
+    },
+    "level_1_danger": {
+        "label": "Promising",
+        "color": "#eab308",
+        "icon": "bi-exclamation-circle",
+        "desc": "xG ≥ 0.10 · miss or post",
+    },
+    "level_0_low": {
+        "label": "Speculative",
+        "color": "#6b7280",
+        "icon": "bi-dash-circle",
+        "desc": "Blocked or xG < 0.10",
+    },
+}
+
+# Row label display config
+ROW_META = {
+    "N":    {"color": "#94a3b8", "fmt": "d"},
+    "xG":   {"color": "#3b82f6", "fmt": ".2f"},
+    "SoT%": {"color": "#f43f5e", "fmt": ".1f%"},
+    "GS":   {"color": "#22c55e", "fmt": "d"},
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPER — mini KPI card (same as other cards modules)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _mini_kpi(label: str, value, subtitle: str, color: str, icon: str) -> html.Div:
+    return html.Div(
+        [
+            html.Div(
+                html.I(className=f"bi {icon}",
+                       style={"color": color, "fontSize": "1.3rem"}),
+                className="kpi-icon",
+            ),
+            html.Div(
+                [
+                    html.Span(label, className="kpi-label"),
+                    html.Span(str(value), className="kpi-value"),
+                    html.Span(subtitle, className="kpi-subtitle",
+                              style={"color": color}),
+                ],
+                className="kpi-text",
+            ),
+        ],
+        className="kpi-card",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# A. SHOT OVERVIEW KPIs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _section_shot_overview(sm: dict, matrix: dict) -> html.Div:
+    """Top-level shot volume and xG overview KPIs."""
+    total_xg = matrix.get("TOTAL", {}).get("xG", 0.0)
+    total_sot_pct = matrix.get("TOTAL", {}).get("SoT%", 0.0)
+    total_gs = matrix.get("TOTAL", {}).get("GS", 0)
+
+    return html.Div(
+        [
+            html.H6("Shot Overview", className="buildup-subsection-title"),
+            html.Div(
+                [
+                    _mini_kpi(
+                        "Total Shots", sm.get("shots_total", 0),
+                        f"{sm.get('shot_freq_pct', 0)}% of possessions",
+                        "#3b82f6", "bi-crosshair",
+                    ),
+                    _mini_kpi(
+                        "In-Box", sm.get("shots_in_box", 0),
+                        f"{sm.get('pct_in_box', 0)}% of shots",
+                        "#8b5cf6", "bi-box-arrow-in-down-right",
+                    ),
+                    _mini_kpi(
+                        "Out-Box", sm.get("shots_out_box", 0),
+                        f"{sm.get('pct_out_box', 0)}% of shots",
+                        "#6b7280", "bi-box-arrow-up-right",
+                    ),
+                    _mini_kpi(
+                        "SoT %", f"{sm.get('sot_pct_total', 0)}%",
+                        "shots on target",
+                        "#f43f5e", "bi-bullseye",
+                    ),
+                    _mini_kpi(
+                        "xG Total", f"{total_xg:.2f}",
+                        f"xG/Shot: {sm.get('xg_per_shot', 0):.2f}",
+                        "#3b82f6", "bi-graph-up-arrow",
+                    ),
+                    _mini_kpi(
+                        "Goals", total_gs,
+                        f"SoT%: {total_sot_pct:.1f}%",
+                        "#22c55e", "bi-trophy-fill",
+                    ),
+                ],
+                className="team-kpi-row",
+            ),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# B. CHAIN-TO-GOAL MATRIX
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _section_chain_to_goal_matrix(matrix: dict) -> html.Div:
+    """Render the 5-origin × 4-row Chain-to-Goal Matrix as a styled table."""
+    # Column headers = origins + TOTAL
+    columns = ORIGIN_LABELS + ["TOTAL"]
+
+    # Build table header
+    header_cells = [html.Th("", style={"width": "60px"})]
+    for col in columns:
+        color = ORIGIN_COLORS.get(col, "#8a1f33")
+        header_cells.append(
+            html.Th(
+                col,
+                style={
+                    "color": color,
+                    "fontWeight": "600",
+                    "fontSize": "0.78rem",
+                    "textAlign": "center",
+                    "padding": "0.6rem 0.5rem",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.5px",
+                },
+            )
+        )
+
+    # Build table body rows
+    body_rows = []
+    for row_key in MATRIX_ROWS:
+        meta = ROW_META[row_key]
+        row_cells = [
+            html.Td(
+                row_key,
+                style={
+                    "fontWeight": "600",
+                    "color": meta["color"],
+                    "fontSize": "0.82rem",
+                    "padding": "0.5rem 0.6rem",
+                },
+            )
+        ]
+
+        # Gather values to find max for highlighting
+        values = []
+        for col in columns:
+            val = matrix.get(col, {}).get(row_key, 0)
+            values.append(val)
+
+        max_val = max(values) if values else 0
+
+        for i, col in enumerate(columns):
+            val = values[i]
+            is_total = col == "TOTAL"
+            is_max = (val == max_val and max_val > 0 and not is_total)
+
+            # Format value
+            if meta["fmt"] == "d":
+                display = str(int(val))
+            elif meta["fmt"] == ".1f%":
+                display = f"{val:.1f}%"
+            else:
+                display = f"{val:.2f}"
+
+            cell_style = {
+                "textAlign": "center",
+                "padding": "0.5rem 0.4rem",
+                "fontSize": "0.95rem",
+                "fontWeight": "700" if is_total else "600",
+                "borderRadius": "6px",
+            }
+
+            if is_total:
+                cell_style["color"] = "#8a1f33"
+                cell_style["background"] = "rgba(138, 31, 51, 0.08)"
+            elif is_max:
+                # Highlight the max origin per row
+                cell_style["color"] = ORIGIN_COLORS.get(col, "#fff")
+                cell_style["background"] = f"rgba(138, 31, 51, 0.06)"
+            else:
+                cell_style["color"] = "var(--text-secondary)"
+
+            row_cells.append(html.Td(display, style=cell_style))
+
+        body_rows.append(html.Tr(row_cells))
+
+    # Shot count sub-row (number of shots per origin)
+    count_cells = [
+        html.Td(
+            "Shots",
+            style={
+                "fontWeight": "500",
+                "color": "var(--text-muted)",
+                "fontSize": "0.75rem",
+                "padding": "0.4rem 0.6rem",
+                "textTransform": "uppercase",
+                "letterSpacing": "0.5px",
+            },
+        )
+    ]
+    # shots_detail not available here, so derive from GS or use matrix info
+    # We'll count from the matrix (approximate via xG distribution)
+    for col in columns:
+        gs = matrix.get(col, {}).get("GS", 0)
+        xg = matrix.get(col, {}).get("xG", 0)
+        # Estimate count from xG (rough: shots ~ xG / avg_xG)
+        # This is displayed in the shot-origin section instead
+        count_cells.append(
+            html.Td(
+                "",
+                style={
+                    "textAlign": "center",
+                    "padding": "0.3rem 0.4rem",
+                    "fontSize": "0.75rem",
+                    "color": "var(--text-muted)",
+                },
+            )
+        )
+
+    table = html.Table(
+        [
+            html.Thead(html.Tr(header_cells)),
+            html.Tbody(body_rows),
+        ],
+        style={
+            "width": "100%",
+            "borderCollapse": "separate",
+            "borderSpacing": "4px",
+        },
+    )
+
+    return html.Div(
+        [
+            html.H6("Chain-to-Goal Matrix", className="buildup-subsection-title"),
+            html.Div(
+                "Rows: N (shots) · xG (total) · SoT% (shots on target) · GS (goals) — all columns use consistent aggregation",
+                style={
+                    "fontSize": "0.75rem",
+                    "color": "var(--text-muted)",
+                    "marginBottom": "0.8rem",
+                },
+            ),
+            html.Div(
+                table,
+                className="pitch-dark-container chain-goal-matrix-table",
+                style={
+                    "borderRadius": "var(--radius-sm)",
+                    "padding": "0.8rem",
+                    "overflowX": "auto",
+                },
+            ),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# C. ORIGIN BREAKDOWN (bar + KPIs)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _section_origin_breakdown(shots_detail: list) -> html.Div:
+    """Show the distribution of shots across the 5 attack origins."""
+    total = max(len(shots_detail), 1)
+
+    counts = {}
+    for origin in ORIGIN_LABELS:
+        counts[origin] = sum(1 for s in shots_detail if s["origin"] == origin)
+
+    # Stacked horizontal bar
+    bar_fig = go.Figure()
+    for origin in ORIGIN_LABELS:
+        count = counts[origin]
+        if count == 0:
+            continue
+        pct = round(count / total * 100, 1)
+        bar_fig.add_trace(go.Bar(
+            y=["Origin"],
+            x=[pct],
+            orientation="h",
+            name=origin,
+            marker_color=ORIGIN_COLORS[origin],
+            text=[f"{origin} {pct}%"],
+            textposition="inside",
+            textfont=dict(size=10, color="#fff"),
+            hovertemplate=f"{origin}: {count} ({pct}%)<extra></extra>",
+        ))
+    bar_fig.update_layout(
+        barmode="stack",
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=0, r=0, t=0, b=0), height=42,
+        xaxis=dict(showgrid=False, showticklabels=False,
+                   range=[0, 100], fixedrange=True),
+        yaxis=dict(showgrid=False, showticklabels=False, fixedrange=True),
+        showlegend=False,
+    )
+
+    # KPI cards per origin
+    cards = []
+    for origin in ORIGIN_LABELS:
+        count = counts[origin]
+        if count == 0:
+            continue
+        pct = round(count / total * 100, 1)
+        goals = sum(1 for s in shots_detail
+                    if s["origin"] == origin and s["is_goal"])
+        xg_sum = sum(s["xG"] for s in shots_detail if s["origin"] == origin)
+
+        cards.append(
+            html.Div(
+                [
+                    html.Div(
+                        html.I(
+                            className=f"bi {ORIGIN_ICONS[origin]}",
+                            style={
+                                "color": ORIGIN_COLORS[origin],
+                                "fontSize": "1.1rem",
+                            },
+                        ),
+                        className="kpi-icon",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(origin, className="kpi-label"),
+                            html.Span(str(count), className="kpi-value"),
+                            html.Span(
+                                f"{pct}% · {goals}G · xG {xg_sum:.2f}",
+                                className="kpi-subtitle",
+                                style={"color": ORIGIN_COLORS[origin]},
+                            ),
+                        ],
+                        className="kpi-text",
+                    ),
+                ],
+                className="kpi-card",
+            )
+        )
+
+    return html.Div(
+        [
+            html.H6("Attack Origin Breakdown", className="buildup-subsection-title"),
+            html.Div(
+                "Priority: Set Piece → High Regain → Counter → Cross → Through Ball → Combination (default)",
+                style={
+                    "fontSize": "0.78rem",
+                    "color": "var(--text-muted)",
+                    "marginBottom": "0.6rem",
+                },
+            ),
+            html.Div(cards, className="team-kpi-row"),
+            dcc.Graph(figure=bar_fig, config={"displayModeBar": False},
+                      style={"marginTop": "0.5rem"}),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# D. SHOT QUALITY TIERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _section_shot_quality(tiers: dict, shots_detail: list) -> html.Div:
+    """Shot quality tier distribution — donut chart + KPI cards."""
+    total = max(len(shots_detail), 1)
+
+    # Donut chart
+    tier_keys = ["level_3_converted", "level_2_threat",
+                 "level_1_danger", "level_0_low"]
+    labels = []
+    values = []
+    colors = []
+    for tk in tier_keys:
+        meta = TIER_META[tk]
+        t = tiers.get(tk, {})
+        labels.append(meta["label"])
+        values.append(t.get("count", 0))
+        colors.append(meta["color"])
+
+    donut_fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.55,
+        marker=dict(colors=colors, line=dict(color="rgba(0,0,0,0.3)", width=1)),
+        textinfo="label+percent",
+        textfont=dict(size=11, color="#e2e8f0"),
+        hovertemplate="%{label}: %{value} shots (%{percent})<extra></extra>",
+        sort=False,
+    )])
+    donut_fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=10, t=10, b=10), height=220,
+        showlegend=False,
+        annotations=[dict(
+            text=f"<b>{total}</b><br><span style='font-size:10px'>shots</span>",
+            x=0.5, y=0.5, font_size=18, font_color="#e2e8f0",
+            showarrow=False,
+        )],
+    )
+
+    # KPI cards
+    cards = []
+    for tk in tier_keys:
+        meta = TIER_META[tk]
+        t = tiers.get(tk, {})
+        cards.append(
+            _mini_kpi(
+                meta["label"], t.get("count", 0),
+                f"{t.get('pct', 0)}% · {meta['desc']}",
+                meta["color"], meta["icon"],
+            )
+        )
+
+    return html.Div(
+        [
+            html.H6("Shot Quality Tiers", className="buildup-subsection-title"),
+            html.Div(
+                [
+                    html.Div(
+                        dcc.Graph(figure=donut_fig, config={"displayModeBar": False}),
+                        style={"flex": "0 0 240px", "minWidth": "200px"},
+                    ),
+                    html.Div(
+                        cards,
+                        className="team-kpi-row",
+                        style={"flex": "1", "minWidth": "0"},
+                    ),
+                ],
+                style={"display": "flex", "gap": "1.5rem",
+                       "alignItems": "center", "flexWrap": "wrap"},
+            ),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# E. SHOT MAP (scatter on half-pitch)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _draw_half_pitch(fig: go.Figure) -> None:
+    """Draw right half of pitch outline (x ≥ 50)."""
+    line_color = "rgba(255,255,255,0.25)"
+    lw = 1.5
+
+    shapes = [
+        # Pitch outline (right half)
+        dict(type="rect", x0=50, y0=0, x1=100, y1=100,
+             line=dict(color=line_color, width=lw)),
+        # Penalty box
+        dict(type="rect", x0=83.33, y0=21.1, x1=100, y1=78.9,
+             line=dict(color=line_color, width=lw)),
+        # Six-yard box
+        dict(type="rect", x0=94.17, y0=36.8, x1=100, y1=63.2,
+             line=dict(color=line_color, width=lw)),
+        # Penalty spot
+        dict(type="circle", x0=88-0.6, y0=50-0.6, x1=88+0.6, y1=50+0.6,
+             fillcolor=line_color, line=dict(color=line_color, width=0)),
+        # Centre circle arc (partial — right half only)
+        dict(type="circle", x0=50-9.15, y0=50-9.15, x1=50+9.15, y1=50+9.15,
+             line=dict(color=line_color, width=lw)),
+        # D-arc
+        dict(type="circle", x0=88-9.15, y0=50-9.15, x1=88+9.15, y1=50+9.15,
+             line=dict(color=line_color, width=lw)),
+        # Goal
+        dict(type="rect", x0=100, y0=44.2, x1=102, y1=55.8,
+             line=dict(color=line_color, width=lw)),
+        # Final third line
+        dict(type="line", x0=66.67, y0=0, x1=66.67, y1=100,
+             line=dict(color="rgba(255,255,255,0.12)", width=1, dash="dot")),
+    ]
+    for s in shapes:
+        fig.add_shape(**s)
+
+
+def _section_shot_map(shots_detail: list) -> html.Div:
+    """Scatter plot of shot locations coloured by origin."""
+    if not shots_detail:
+        return html.Div()
+
+    fig = go.Figure()
+
+    for origin in ORIGIN_LABELS:
+        origin_shots = [s for s in shots_detail if s["origin"] == origin]
+        if not origin_shots:
+            continue
+
+        xs = [s["x"] for s in origin_shots]
+        ys = [s["y"] for s in origin_shots]
+        goals = [s["is_goal"] for s in origin_shots]
+        texts = [
+            f"{s['player']}<br>{s['minute']}' — xG {s['xG']:.2f}"
+            + (" ⚽" if s["is_goal"] else "")
+            for s in origin_shots
+        ]
+
+        # Goals as stars, others as circles
+        goal_xs = [x for x, g in zip(xs, goals) if g]
+        goal_ys = [y for y, g in zip(ys, goals) if g]
+        goal_texts = [t for t, g in zip(texts, goals) if g]
+        non_xs = [x for x, g in zip(xs, goals) if not g]
+        non_ys = [y for y, g in zip(ys, goals) if not g]
+        non_texts = [t for t, g in zip(texts, goals) if not g]
+
+        if non_xs:
+            fig.add_trace(go.Scatter(
+                x=non_xs, y=non_ys,
+                mode="markers",
+                marker=dict(
+                    size=10,
+                    color=ORIGIN_COLORS[origin],
+                    opacity=0.75,
+                    line=dict(color="rgba(255,255,255,0.4)", width=1),
+                ),
+                name=origin,
+                text=non_texts,
+                hoverinfo="text",
+            ))
+
+        if goal_xs:
+            fig.add_trace(go.Scatter(
+                x=goal_xs, y=goal_ys,
+                mode="markers",
+                marker=dict(
+                    size=14,
+                    color=ORIGIN_COLORS[origin],
+                    symbol="star",
+                    line=dict(color="#fff", width=1.5),
+                ),
+                name=f"{origin} (Goal)",
+                text=goal_texts,
+                hoverinfo="text",
+            ))
+
+    _draw_half_pitch(fig)
+
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=5, r=5, t=5, b=5),
+        height=320,
+        xaxis=dict(
+            range=[49, 103], showgrid=False, showticklabels=False,
+            fixedrange=True, zeroline=False,
+        ),
+        yaxis=dict(
+            range=[-2, 102], showgrid=False, showticklabels=False,
+            fixedrange=True, zeroline=False, scaleanchor="x",
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.15,
+            xanchor="center", x=0.5,
+            font=dict(size=10, color="#94a3b8"),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+    )
+
+    return html.Div(
+        [
+            html.H6("Shot Map", className="buildup-subsection-title"),
+            html.Div(
+                "⭐ = goal · circle = shot · colour = attack origin",
+                style={
+                    "fontSize": "0.75rem",
+                    "color": "var(--text-muted)",
+                    "marginBottom": "0.5rem",
+                },
+            ),
+            html.Div(
+                dcc.Graph(figure=fig, config={"displayModeBar": False}),
+                className="pitch-dark-container",
+            ),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# F. PER-ORIGIN xG BARS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _section_xg_by_origin(matrix: dict) -> html.Div:
+    """Horizontal bar chart of xG per attack origin."""
+    origins = [o for o in ORIGIN_LABELS if matrix.get(o, {}).get("xG", 0) > 0]
+    if not origins:
+        return html.Div()
+
+    xg_vals = [matrix[o]["xG"] for o in origins]
+    colors = [ORIGIN_COLORS[o] for o in origins]
+
+    fig = go.Figure(go.Bar(
+        y=origins,
+        x=xg_vals,
+        orientation="h",
+        marker_color=colors,
+        text=[f"{v:.2f}" for v in xg_vals],
+        textposition="outside",
+        textfont=dict(size=11, color="#e2e8f0"),
+        hovertemplate="%{y}: xG = %{x:.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=80, r=40, t=10, b=10), height=max(120, len(origins) * 35),
+        xaxis=dict(showgrid=False, showticklabels=False, fixedrange=True),
+        yaxis=dict(
+            showgrid=False, fixedrange=True, autorange="reversed",
+            tickfont=dict(size=11, color="#94a3b8"),
+        ),
+        showlegend=False,
+    )
+
+    return html.Div(
+        [
+            html.H6("xG by Attack Origin", className="buildup-subsection-title"),
+            dcc.Graph(figure=fig, config={"displayModeBar": False}),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# G. ATTACK ORIGIN GRID — Full Pitch (18 Zones + Half-Space overlays)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Standard 18-zone grid (same as pitch_zones / final_third_cards)
+_OG_X_EDGES = [0, 16.67, 33.33, 50.0, 66.67, 83.33, 100.0]
+_OG_Y_EDGES = [0, 33.33, 66.67, 100.0]
+_OG_N_ROWS = 6   # x-axis bands
+_OG_N_COLS = 3   # y-axis corridors (R / C / L)
+
+# Half-space y boundaries (visual dashed overlays only)
+_HS_Y_VALS = (15.0, 30.0, 70.0, 85.0)
+
+
+def _classify_18zone(x: float, y: float) -> int:
+    """Return zone number 1–18 for standard 18-zone grid."""
+    row = min(int(x / 16.67), 5)
+    col = min(int(y / 33.33), 2)
+    return row * 3 + col + 1
+
+
+def _section_origin_grid(shots_detail: list) -> html.Div:
+    """
+    Full-pitch 18-zone grid showing shot outcome dots (green/red).
+
+    Half-space boundaries drawn as dashed lines with labels in the
+    first two thirds of the pitch.  Matches FT Entry Zones style/size.
+    """
+    if not shots_detail:
+        return html.Div()
+
+    # Accumulate per zone: total positive / negative counts
+    zone_pos: dict[int, int] = {z: 0 for z in range(1, 19)}
+    zone_neg: dict[int, int] = {z: 0 for z in range(1, 19)}
+
+    for s in shots_detail:
+        z = _classify_18zone(s["x"], s["y"])
+        if s["is_goal"] or s["on_target"]:
+            zone_pos[z] += 1
+        else:
+            zone_neg[z] += 1
+
+    fig = go.Figure()
+
+    max_count = max(
+        (zone_pos[z] + zone_neg[z] for z in range(1, 19)),
+        default=1,
+    ) or 1
+
+    for zone_num in range(1, 19):
+        row = (zone_num - 1) // _OG_N_COLS
+        col = (zone_num - 1) % _OG_N_COLS
+
+        x0 = _OG_X_EDGES[row]
+        x1 = _OG_X_EDGES[row + 1]
+        y0 = _OG_Y_EDGES[col]
+        y1 = _OG_Y_EDGES[col + 1]
+        cx = (x0 + x1) / 2
+        cy = (y0 + y1) / 2
+
+        pos = zone_pos[zone_num]
+        neg = zone_neg[zone_num]
+        total = pos + neg
+        intensity = total / max_count if max_count else 0
+
+        fill_a = 0.08 + 0.50 * intensity if total else 0.04
+        fill = f"rgba(138, 31, 51, {fill_a:.2f})"
+
+        fig.add_shape(
+            type="rect", x0=x0, x1=x1, y0=y0, y1=y1,
+            line=dict(color="rgba(255,255,255,0.10)", width=0.5),
+            fillcolor=fill, layer="below",
+        )
+
+        if total > 0:
+            # Bold count
+            fig.add_annotation(
+                x=cx, y=cy + 4,
+                text=f"<b>{total}</b>",
+                showarrow=False,
+                font=dict(size=16, color="#f0f0f0"),
+            )
+            # Zone label
+            fig.add_annotation(
+                x=cx, y=cy - 4,
+                text=f"Z{zone_num}",
+                showarrow=False,
+                font=dict(size=9, color="rgba(255,255,255,0.55)"),
+            )
+            # Outcome dots — only green/red, no origin abbreviation
+            dot_parts: list[str] = []
+            if pos > 0:
+                dot_parts.append(
+                    f"<span style='color:#22c55e'>●{pos}</span>"
+                )
+            if neg > 0:
+                dot_parts.append(
+                    f"<span style='color:#ef4444'>●{neg}</span>"
+                )
+            if dot_parts:
+                fig.add_annotation(
+                    x=cx, y=cy - 12,
+                    text=" ".join(dot_parts),
+                    showarrow=False,
+                    font=dict(size=10),
+                )
+        else:
+            fig.add_annotation(
+                x=cx, y=cy,
+                text=f"Z{zone_num}",
+                showarrow=False,
+                font=dict(size=9, color="rgba(255,255,255,0.18)"),
+            )
+
+    # ── Half-space dashed lines (full pitch) ──
+    for y_val in _HS_Y_VALS:
+        fig.add_shape(
+            type="line", x0=0, x1=100, y0=y_val, y1=y_val,
+            line=dict(color="rgba(255,255,255,0.20)", width=1, dash="dash"),
+            layer="below",
+        )
+
+    # ── "half space" labels in the first 2/3 of the pitch ──
+    # Right half-space (y 15–30) and Left half-space (y 70–85)
+    for hs_y, label in ((22.5, "half space"), (77.5, "half space")):
+        fig.add_annotation(
+            x=33.33, y=hs_y,
+            text=label,
+            showarrow=False,
+            font=dict(size=9, color="rgba(255,255,255,0.30)"),
+            textangle=0,
+        )
+
+    # ── Corridor dividers (solid, standard 18-zone) ──
+    for y_val in (33.33, 66.67):
+        fig.add_shape(
+            type="line", x0=0, x1=100, y0=y_val, y1=y_val,
+            line=dict(color="rgba(255,255,255,0.12)", width=1),
+            layer="below",
+        )
+    for x_val in _OG_X_EDGES[1:-1]:
+        fig.add_shape(
+            type="line", x0=x_val, x1=x_val, y0=0, y1=100,
+            line=dict(color="rgba(255,255,255,0.12)", width=1),
+            layer="below",
+        )
+
+    # ── Pitch markings ──
+    fig.add_shape(
+        type="rect", x0=0, x1=100, y0=0, y1=100,
+        line=dict(color="rgba(255,255,255,0.35)", width=1.5),
+        fillcolor="rgba(0,0,0,0)",
+    )
+    fig.add_shape(
+        type="line", x0=50, x1=50, y0=0, y1=100,
+        line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dash"),
+        layer="below",
+    )
+    fig.add_shape(
+        type="rect", x0=0, x1=16.5, y0=21, y1=79,
+        line=dict(color="rgba(255,255,255,0.18)", width=1),
+        fillcolor="rgba(0,0,0,0)",
+    )
+    fig.add_shape(
+        type="rect", x0=83.5, x1=100, y0=21, y1=79,
+        line=dict(color="rgba(255,255,255,0.18)", width=1),
+        fillcolor="rgba(0,0,0,0)",
+    )
+    fig.add_shape(
+        type="line", x0=66.67, x1=66.67, y0=0, y1=100,
+        line=dict(color="rgba(255,255,255,0.6)", width=2, dash="dash"),
+    )
+
+    fig.add_annotation(
+        x=92, y=-6,
+        text="ATK →",
+        showarrow=False,
+        font=dict(size=9, color="rgba(255,255,255,0.35)"),
+    )
+    fig.add_annotation(
+        x=8, y=-6,
+        text="← OWN GOAL",
+        showarrow=False,
+        font=dict(size=9, color="rgba(255,255,255,0.35)"),
+    )
+
+    fig.update_layout(
+        plot_bgcolor="rgba(15,25,35,0.7)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=10, t=10, b=20),
+        height=400,
+        xaxis=dict(
+            range=[-2, 102], showgrid=False, showticklabels=False,
+            fixedrange=True, zeroline=False,
+        ),
+        yaxis=dict(
+            range=[-10, 105], showgrid=False, showticklabels=False,
+            fixedrange=True, zeroline=False,
+            scaleanchor="x", scaleratio=0.68,
+        ),
+        showlegend=False,
+    )
+
+    return html.Div(
+        [
+            html.H6("Attack Origin Zones",
+                     className="buildup-subsection-title"),
+            html.Div(
+                [
+                    html.Span("● ", style={"color": "#22c55e",
+                                            "fontSize": "0.85rem"}),
+                    html.Span("on target / goal", style={
+                        "fontSize": "0.75rem",
+                        "color": "var(--text-muted)",
+                        "marginRight": "1rem",
+                    }),
+                    html.Span("● ", style={"color": "#ef4444",
+                                            "fontSize": "0.85rem"}),
+                    html.Span("miss / block", style={
+                        "fontSize": "0.75rem",
+                        "color": "var(--text-muted)",
+                    }),
+                ],
+                style={"marginBottom": "0.5rem"},
+            ),
+            html.Div(
+                dcc.Graph(figure=fig, config={"displayModeBar": False}),
+                className="pitch-dark-container",
+            ),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FULL CARD ASSEMBLER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def chance_creation_card(data: dict) -> html.Div:
+    """
+    Assemble the complete Chance Creation card.
+
+    Parameters
+    ----------
+    data : dict
+        Output of ``analyse_chance_creation()``.
+        Must contain keys:
+        - ``chain_to_goal_matrix``
+        - ``shot_metrics``
+        - ``shot_quality_tiers``
+        - ``shots_detail``
+    """
+    matrix = data.get("chain_to_goal_matrix", {})
+    sm = data.get("shot_metrics", {})
+    tiers = data.get("shot_quality_tiers", {})
+    shots = data.get("shots_detail", [])
+
+    if sm.get("shots_total", 0) == 0 and not shots:
+        return html.Div(
+            [
+                html.H5("Chance Creation", className="buildup-card-title"),
+                html.P(
+                    "No shots found for this team in this match.",
+                    className="text-muted",
+                    style={"padding": "2rem", "textAlign": "center"},
+                ),
+            ],
+            className="buildup-card",
+        )
+
+    sep = html.Hr(style={"borderColor": "var(--border-light)",
+                         "margin": "1.5rem 0"})
+
+    sections = [
+        html.H5("Chance Creation", className="buildup-card-title"),
+        # 1 — Shot overview KPIs
+        _section_shot_overview(sm, matrix),
+        sep,
+        # 2 — Attack origin breakdown
+        _section_origin_breakdown(shots),
+        sep,
+        # 3 — xG by origin
+        _section_xg_by_origin(matrix),
+        sep,
+        # 4 — Attack Origin Zones (offensive third grid)
+        _section_origin_grid(shots),
+        sep,
+        # 5 — Shot Map
+        _section_shot_map(shots),
+        sep,
+        # 5 — Shot quality tiers
+        _section_shot_quality(tiers, shots),
+        sep,
+        # 6 — Chain-to-Goal Matrix (end of page)
+        _section_chain_to_goal_matrix(matrix),
+    ]
+
+    return html.Div(sections, className="buildup-card")
