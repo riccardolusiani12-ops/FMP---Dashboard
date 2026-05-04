@@ -206,7 +206,11 @@ class PossessionValueModel:
                 log.error("Unknown model format in %s", path)
 
         except Exception as exc:
-            log.error("Failed to load PV model from %s: %s", path, exc)
+            log.error(
+                "Failed to load PV model from %s: %s. "
+                "Install scikit-learn: pip install scikit-learn",
+                path, exc
+            )
 
     # ── Feature builder ────────────────────────────────────────────────────
 

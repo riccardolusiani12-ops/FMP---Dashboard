@@ -140,68 +140,7 @@ def load_season_matches_cached(season: str) -> pd.DataFrame:
     df = _read_parquet(matches_path)
     if df is not None:
         return df
-    
-    # Second try: extract from points_progression Parquet (fastest path)
-    # Points progression contains one row per team per match, with MatchLabel containing scores
-    pp_path = str(READY_DATA_DIR / f"points_progression_{season}.parquet")
-    pp_df = _read_parquet(pp_path)
-    if pp_df is not None and not pp_df.empty:
-        # Extract unique matches from points_progression
-        matches = []
-        seen = set()
-        
-        for _, row in pp_df.iterrows():
-            try:
-                # MatchLabel format: "Home-Away score" e.g., "Lecce-Atalanta 0-4"
-                label = str(row.get("MatchLabel", ""))
-                if not label or " " not in label:
-                    continue
-                
-                # Split into teams and score
-                teams_part, score_part = label.rsplit(" ", 1)
-                if "-" not in score_part or "-" not in teams_part:
-                    continue
-                
-                # Parse score
-                try:
-                    hg, ag = map(int, score_part.split("-"))
-                except (ValueError, TypeError):
-                    continue
-                
-                # Find team split (last dash before score)
-                # We need to find where the team names end and score begins
-                # The format is "Home-Away score" but team names might have special chars
-                # Use the fact that score is digits-digits pattern
-                parts = teams_part.split("-")
-                if len(parts) < 2:
-                    continue
-                
-                # Reconstruct: last part is away team, rest is home
-                away = parts[-1].strip()
-                home = "-".join(parts[:-1]).strip()
-                
-                matchday = int(row["Matchday"])
-                match_key = (matchday, home, away)
-                
-                if match_key not in seen:
-                    seen.add(match_key)
-                    matches.append({
-                        "Season": row["Season"],
-                        "Matchday": matchday,
-                        "Home": home,
-                        "Away": away,
-                        "HG": hg,
-                        "AG": ag,
-                        "Date": "",
-                        "File": "",
-                    })
-            except Exception:
-                continue
-        
-        if matches:
-            result_df = pd.DataFrame(matches)
-            return result_df.sort_values(["Matchday", "Home"]).reset_index(drop=True)
-    
+
     # Fallback: compute from raw event CSVs (slow path)
     log.warning("No cached match data for %s — computing from raw", season)
     from src.analytics.multi_season_standings import load_season_matches

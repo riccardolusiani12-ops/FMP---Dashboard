@@ -67,7 +67,7 @@ BOX_X: float = 100.0 / 6 * 5             # ≈ 83.33
 # Enable / disable debug trace (list of per-distribution records).
 # When True the returned dict includes a 'debug_events' key with
 # a list of dicts that can be printed or exported for validation.
-DEBUG_TRACE: bool = True
+DEBUG_TRACE: bool = False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

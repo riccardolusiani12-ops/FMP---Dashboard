@@ -38,6 +38,114 @@ Open **http://127.0.0.1:8050** in your browser.
 
 ---
 
+## Weekly Database Update Procedure
+
+Follow these steps every time new Opta match CSV files are available for the
+current Serie A season. The procedure takes roughly 5–10 minutes.
+
+### Before You Start
+
+1. Create a dedicated git branch for the weekly update so that `main` always
+   reflects a known-good state:
+   ```bash
+   git checkout -b weekly/YYYY-MM-DD
+   ```
+2. Confirm the app starts cleanly on the current branch before touching any
+   data files:
+   ```bash
+   cd dash_app && python app.py
+   ```
+   Browse to `http://127.0.0.1:8050` and verify the dashboard loads without
+   errors, then stop the server (`Ctrl+C`).
+
+### Adding New Match CSVs
+
+1. Copy the new Opta event CSV file(s) into the season events folder:
+   ```
+   data/raw/serie_a_2025_2026/events/
+   ```
+2. Follow the existing file naming convention:
+   ```
+   {week}_{HomeTeam}_{AwayTeam}_{matchId}.csv
+   ```
+   For example: `14_Inter_Milan_f9a3c1.csv`
+3. No manual recompute command is needed — the app auto-detects new files
+   on the next startup and triggers the preprocessing pipeline automatically.
+
+### Verifying the Update
+
+1. Start the app:
+   ```bash
+   cd dash_app && python app.py
+   ```
+2. Watch the startup output in the terminal. A successful pipeline run shows:
+   ```
+   🔍 Checking data freshness
+   ✅ Data check complete.
+   ```
+3. Check the log file for any errors:
+   ```bash
+   grep ERROR dash_app/logs/app.log
+   ```
+   A clean update produces no `ERROR` lines.
+4. In the browser, navigate to **Team Overview**, select the **2025/26** season,
+   and confirm:
+   - The expected teams appear in the standings table.
+   - The newly added gameweek is reflected in the points progression chart.
+
+### If Something Goes Wrong (Recovery)
+
+1. If the app fails to start or displays wrong data, discard the weekly branch
+   and return to the last known-good state:
+   ```bash
+   git checkout main
+   ```
+2. The raw CSV files in `data/raw/` are **not** tracked by git — they remain
+   safely on disk even after switching branches.
+3. To manually re-trigger preprocessing for the current season without restarting
+   the full app:
+   ```bash
+   cd dash_app && python -m src.analytics.precompute_serie_a 2025_2026
+   ```
+4. After fixing the issue, re-run the verification steps above before merging.
+
+### Backing Up Raw Data
+
+> ⚠️ The raw Opta CSV files are gitignored (too large for git and contain
+> confidential data). They exist **only** on your local machine.
+
+1. After each successful weekly update, back up the entire `data/raw/` folder
+   to an external drive or cloud storage (e.g. Google Drive, iCloud).
+2. Perform the backup **before** merging the weekly branch to `main` so that
+   the backup always corresponds to a verified, working state.
+3. Recommended backup command:
+   ```bash
+   rsync -av --progress \
+     "/Users/ricki/Local Projects/FMP_SerieA_Dashboard/data/raw/" \
+     "/Volumes/BackupDrive/FMP_raw_backup/$(date +%Y-%m-%d)/"
+   ```
+
+### Merging to Main
+
+Once the update is verified in the browser and the backup is complete:
+
+```bash
+# Stage any auto-generated manifest/count files that changed
+git add data/ready/.csv_count_*
+
+# Commit with a descriptive message
+git commit -m "Weekly update: GW{n} 2025/26"
+
+# Merge back to main
+git checkout main
+git merge weekly/YYYY-MM-DD
+```
+
+Replace `{n}` with the actual gameweek number and `YYYY-MM-DD` with today's
+date.
+
+---
+
 ## Project Structure
 
 ```

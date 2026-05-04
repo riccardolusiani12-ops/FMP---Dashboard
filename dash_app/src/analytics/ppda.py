@@ -32,35 +32,6 @@ PRESSING_ZONE_MIN = 100 - PPDA_ZONE_UPPER  # = 40
 PASS_EVENT = "pass"
 REGAIN_EVENT = "ball recovery"
 
-# ── Opta long-form → canonical short name ────────────────────────────────────
-_OPTA_NAME_MAP: dict[str, str] = {
-    "Atalanta Bergamasca Calcio": "Atalanta",
-    "Bologna FC 1909":            "Bologna",
-    "ACF Fiorentina":             "Fiorentina",
-    "Genoa CFC":                  "Genoa",
-    "FC Internazionale Milano":   "Inter",
-    "Juventus FC":                "Juventus",
-    "SS Lazio":                   "Lazio",
-    "AC Milan":                   "Milan",
-    "SSC Napoli":                 "Napoli",
-    "AS Roma":                    "Roma",
-    "Torino FC":                  "Torino",
-    "Udinese Calcio":             "Udinese",
-    "Cagliari Calcio":            "Cagliari",
-    "Calcio Como 1907":           "Como",
-    "US Cremonese":               "Cremonese",
-    "Hellas Verona FC":           "Hellas Verona",
-    "US Lecce":                   "Lecce",
-    "Parma Calcio 1913":          "Parma",
-    "Pisa Sporting Club":         "Pisa",
-    "US Sassuolo Calcio":         "Sassuolo",
-    "Venezia FC":                 "Venezia",
-    "Empoli FC":                  "Empoli",
-    "AC Monza":                   "Monza",
-    "US Salernitana 1919":        "Salernitana",
-    "Frosinone Calcio":           "Frosinone",
-}
-
 # ── Dashboard colour palette ─────────────────────────────────────────────────
 NEUTRAL_COLOR = "#4a6274"
 HIGHLIGHT_COLOR = PRIMARY_COLOR     # #8a1f33
@@ -74,7 +45,7 @@ WARN_RED = "#EF553B"
 
 def _short_name(opta_name: str) -> str:
     """Map an Opta long-form team name to a dashboard-canonical short name."""
-    return _OPTA_NAME_MAP.get(opta_name, canonical_name(opta_name))
+    return canonical_name(opta_name)
 
 
 def load_season_events(season: str) -> pd.DataFrame:
