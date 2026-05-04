@@ -135,16 +135,32 @@ def load_season_matches_cached(season: str) -> pd.DataFrame:
     Optimization: Uses points_progression Parquet when available, as it contains
     match-level data and is much faster to load than raw CSV parsing.
     """
-    # First try: dedicated matches Parquet (if it exists)
+    # First try: dedicated matches Parquet in ready dir
     matches_path = str(READY_DATA_DIR / f"matches_{season}.parquet")
     df = _read_parquet(matches_path)
+    if df is not None:
+        return df
+
+    # Second try: processed dir (written by precompute_season)
+    processed_path = str(PROCESSED_DATA_DIR / f"matches_{season}.parquet")
+    df = _read_parquet(processed_path)
     if df is not None:
         return df
 
     # Fallback: compute from raw event CSVs (slow path)
     log.warning("No cached match data for %s — computing from raw", season)
     from src.analytics.multi_season_standings import load_season_matches
-    return load_season_matches(season)
+    df = load_season_matches(season)
+    if df is not None and not df.empty:
+        # Persist so subsequent runs (and restarts) skip this slow path
+        try:
+            READY_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(READY_DATA_DIR / f"matches_{season}.parquet", index=False, engine="pyarrow")
+            log.info("Persisted match data for %s to ready dir", season)
+            _read_parquet.cache_clear()
+        except Exception as exc:
+            log.warning("Could not persist match data for %s: %s", season, exc)
+    return df
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

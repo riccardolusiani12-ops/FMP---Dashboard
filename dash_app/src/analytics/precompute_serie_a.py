@@ -92,6 +92,7 @@ def precompute_season(season: str) -> dict[str, pd.DataFrame]:
         return results
 
     _save_parquet(matches, PROCESSED_DATA_DIR / f"matches_{season}.parquet", "Matches")
+    _save_parquet(matches, READY_DATA_DIR / f"matches_{season}.parquet", "Matches (ready)")
     results["matches"] = matches
 
     # ── 2. Standings ─────────────────────────────────────────

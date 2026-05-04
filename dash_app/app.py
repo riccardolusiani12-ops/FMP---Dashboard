@@ -103,6 +103,20 @@ def _ensure_fresh_data():
 
     print("✅ Data check complete.\n")
 
+    # Warm the in-memory match cache for every season
+    from src.analytics.data_loader import load_season_matches_cached
+    print("🔥 Warming match cache for all seasons …")
+    for season in AVAILABLE_SEASONS:
+        try:
+            df = load_season_matches_cached(season)
+            if df is not None and not df.empty:
+                print(f"  ✓ Startup: ready data warmed for {season} ({len(df)} matches)")
+            else:
+                print(f"  ⚠ Startup: no match data available for {season} — skipping")
+        except Exception as exc:
+            print(f"  ✗ Startup: failed to warm cache for {season}: {exc}")
+    print("🏁 Cache warm-up complete.\n")
+
 
 _ensure_fresh_data()
 
