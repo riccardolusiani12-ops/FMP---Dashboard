@@ -72,6 +72,7 @@ def _is_readable_parquet(path: Path) -> bool:
 def invalidate_cache() -> None:
     """Clear the in-memory Parquet cache (e.g. after re-preprocessing)."""
     _read_parquet.cache_clear()
+    load_season_matches_cached.cache_clear()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -123,21 +124,28 @@ def load_standings(season: str) -> pd.DataFrame:
     return standings
 
 
+@lru_cache(maxsize=16)
 def load_season_matches_cached(season: str) -> pd.DataFrame:
     """
     Load all match results for a season with caching.
     Tries precomputed Parquet first, then falls back to computing from raw CSVs.
-    
+
     Returns
     -------
     pd.DataFrame with columns: Season, Matchday, Home, Away, HG, AG, Date, File
-    
+
     Optimization: Uses points_progression Parquet when available, as it contains
     match-level data and is much faster to load than raw CSV parsing.
     """
-    # First try: dedicated matches Parquet (if it exists)
+    # First try: dedicated matches Parquet in ready dir
     matches_path = str(READY_DATA_DIR / f"matches_{season}.parquet")
     df = _read_parquet(matches_path)
+    if df is not None:
+        return df
+
+    # Second try: processed dir (pre-computed matches table)
+    processed_path = str(PROCESSED_DATA_DIR / f"matches_{season}.parquet")
+    df = _read_parquet(processed_path)
     if df is not None:
         return df
     
