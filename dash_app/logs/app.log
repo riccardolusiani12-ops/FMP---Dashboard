@@ -2877,3 +2877,6 @@ assist_is_through_ball     0.290372         0.035813
 2026-05-04 13:20:15 | INFO     | dashboard.high_regains | Linked 2 / 11 high regains to shots (window=15s) for Inter
 2026-05-04 13:20:15 | INFO     | dashboard.high_regains | High regain KPIs for Inter: 11 total, 2→shot (18%), 2→goal, avg Δt=3.0s, total PV=0.248
 2026-05-04 13:20:15 | INFO     | dashboard.chance_creation | Chance creation for Inter: 20 shots, 5 goals, total xG=2.29, origins={'Set Piece': 7, 'High Regain': 2, 'Counter': 2, 'Cross': 2, 'Through Ball': 0, 'Combination': 7}, high_regains=11
+2026-05-04 15:20:55 | INFO     | dashboard.high_regains | Linked 3 / 3 high regains to shots (window=15s) for Inter
+2026-05-04 15:20:55 | INFO     | dashboard.high_regains | High regain KPIs for Inter: 3 total, 3→shot (100%), 0→goal, avg Δt=3.3s, total PV=0.341
+2026-05-04 15:20:55 | INFO     | dashboard.chance_creation | Chance creation for Inter: 17 shots, 5 goals, total xG=2.03, origins={'Set Piece': 3, 'High Regain': 0, 'Counter': 0, 'Cross': 2, 'Through Ball': 0, 'Combination': 12}, high_regains=3
