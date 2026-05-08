@@ -84,10 +84,25 @@ def _offensive_phase(match_csv: Path, team: str) -> html.Div:
 
 def _defensive_phase(match_csv: Path, team: str) -> html.Div:
     from src.analytics.defensive_pressing import analyse_defensive_pressing
+    from src.analytics.defensive_structure import analyse_defensive_structure
     from src.components.defensive_pressing_cards import defensive_pressing_card
+    from src.components.defensive_structure_cards import defensive_structure_card
+
+    d1_data = analyse_defensive_pressing(match_csv, team)
+    d2_data = analyse_defensive_structure(match_csv, team)
+
+    # Pass D1 pressing_line_median into D2 data so the offside line chart
+    # can overlay both reference lines without re-computing D1 metrics.
+    d2_data["pressing_line_median"] = d1_data.get("pressing_line_median")
+
+    # Pass offside line median into D1 data so the pressing pitch map can
+    # overlay it as a purple dotted line alongside the pressing line.
+    d1_data["offside_line_median"] = d2_data.get("offside_line_median")
 
     return html.Div([
-        _safe_render(defensive_pressing_card, analyse_defensive_pressing(match_csv, team)),
+        _safe_render(defensive_pressing_card, d1_data),
+        html.Div(style={"height": "2rem"}),
+        _safe_render(defensive_structure_card, d2_data),
     ])
 
 

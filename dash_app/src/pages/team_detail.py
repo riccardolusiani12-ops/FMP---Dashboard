@@ -203,7 +203,7 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                                 [
                                     html.I(className="bi bi-crosshair me-2"),
                                     html.H4(
-                                        "Goals & Expected Goals",
+                                        "Offensive Production and Defensive Efficiency",
                                         className="section-title mb-0",
                                     ),
                                 ],

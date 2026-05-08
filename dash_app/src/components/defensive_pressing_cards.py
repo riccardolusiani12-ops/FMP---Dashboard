@@ -123,7 +123,7 @@ def _section_overview(d: dict) -> html.Div:
                     ),
                     _mini_kpi(
                         "Press Success", f"{success}%",
-                        f"{succ_num} / {succ_tot} — possession ≥ 5 s after action",
+                        f"{succ_num} / {succ_tot} — possession ≥ 10 s after action",
                         SUCCESS_COLOR, "bi-check-circle-fill",
                     ),
                 ],
@@ -371,7 +371,7 @@ def _build_combined_heatmap_outcomes(
     18-zone density heatmap as filled zone rectangles (background layer)
     with success / failure outcome dots plotted on top.
 
-    Green filled circles  = possession regained within 5 s.
+    Green filled circles  = possession regained within 10 s.
     Red   open  circles  = opponent retained the ball.
     """
     fig = go.Figure()
@@ -430,7 +430,7 @@ def _build_combined_heatmap_outcomes(
             fail_pts.append((x, y, label))
 
     for pts, name, color, symbol in [
-        (success_pts, "Successful (≤5 s)", SUCCESS_COLOR, "circle"),
+        (success_pts, "Successful (≤10 s)", SUCCESS_COLOR, "circle"),
         (fail_pts,    "Unsuccessful",       FAIL_COLOR,    "circle-open"),
     ]:
         if not pts:
@@ -557,10 +557,15 @@ def _pitch_layout(fig: go.Figure, title: str, height: int = 430,
 # F. ALL ACTIONS PITCH MAP — by action type + median pressing line
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _build_actions_scatter(detail: list[dict], median_x: float | None) -> go.Figure:
+def _build_actions_scatter(
+    detail: list[dict],
+    median_x: float | None,
+    offside_line_x: float | None = None,
+) -> go.Figure:
     """
     Full-pitch scatter of all defensive actions coloured by action type.
-    Overlays the median pressing line as a vertical annotation.
+    Overlays the median pressing line (white dotted) and, when available,
+    the offside line (purple dotted) as vertical annotations.
     """
     fig = go.Figure()
 
@@ -613,6 +618,20 @@ def _build_actions_scatter(detail: list[dict], median_x: float | None) -> go.Fig
             xanchor="center",
         )
 
+    if offside_line_x is not None:
+        fig.add_shape(
+            type="line",
+            x0=offside_line_x, x1=offside_line_x, y0=0, y1=100,
+            line=dict(color="rgba(139,92,246,0.85)", width=2, dash="dot"),
+        )
+        fig.add_annotation(
+            x=offside_line_x, y=-8,
+            text=f"<b>Offside line x={offside_line_x}</b>",
+            showarrow=False,
+            font=dict(size=10, color="rgba(139,92,246,0.90)"),
+            xanchor="center",
+        )
+
     _pitch_layout(fig, "Defensive Actions by Type", height=430, show_legend=True)
     return fig
 
@@ -633,43 +652,7 @@ def defensive_pressing_card(data: dict) -> html.Div:
     return html.Div(
         [
             # Card header
-            html.Div(
-                [
-                    html.Div(
-                        html.I(
-                            className="bi bi-shield-shaded",
-                            style={"fontSize": "1.4rem", "color": PRIMARY},
-                        ),
-                        style={
-                            "background": "rgba(138,31,51,0.12)",
-                            "borderRadius": "8px",
-                            "padding": "8px 10px",
-                            "display": "flex",
-                            "alignItems": "center",
-                        },
-                    ),
-                    html.Div(
-                        [
-                            html.H5(
-                                "Pressing",
-                                style={"margin": "0", "fontWeight": "700",
-                                       "color": "var(--text-primary)"},
-                            ),
-                            html.P(
-                                "PPDA · Pressing Height · Direction · Success Rate",
-                                style={"margin": "0", "fontSize": "0.82rem",
-                                       "color": "var(--text-muted)"},
-                            ),
-                        ],
-                    ),
-                ],
-                style={
-                    "display": "flex", "alignItems": "center", "gap": "12px",
-                    "marginBottom": "1.5rem",
-                    "paddingBottom": "1rem",
-                    "borderBottom": "1px solid var(--border-color)",
-                },
-            ),
+            html.H5("Pressure", className="buildup-card-title"),
 
             # A — Overview
             html.Div(
@@ -677,7 +660,7 @@ def defensive_pressing_card(data: dict) -> html.Div:
                 style={"marginBottom": "1.5rem"},
             ),
 
-            html.Hr(style={"borderColor": "var(--border-color)", "margin": "1rem 0"}),
+            html.Hr(style={"borderColor": "var(--border-light)", "margin": "1.5rem 0"}),
 
             # B — Defensive Actions by Third
             html.Div(
@@ -685,7 +668,7 @@ def defensive_pressing_card(data: dict) -> html.Div:
                 style={"marginBottom": "1.5rem"},
             ),
 
-            html.Hr(style={"borderColor": "var(--border-color)", "margin": "1rem 0"}),
+            html.Hr(style={"borderColor": "var(--border-light)", "margin": "1.5rem 0"}),
 
             # C — Pressing Direction
             html.Div(
@@ -693,7 +676,7 @@ def defensive_pressing_card(data: dict) -> html.Div:
                 style={"marginBottom": "1.5rem"},
             ),
 
-            html.Hr(style={"borderColor": "var(--border-color)", "margin": "1rem 0"}),
+            html.Hr(style={"borderColor": "var(--border-light)", "margin": "1.5rem 0"}),
 
             # D — Pressing Success by Zone
             html.Div(
@@ -701,7 +684,7 @@ def defensive_pressing_card(data: dict) -> html.Div:
                 style={"marginBottom": "1.5rem"},
             ),
 
-            html.Hr(style={"borderColor": "var(--border-color)", "margin": "1rem 0"}),
+            html.Hr(style={"borderColor": "var(--border-light)", "margin": "1.5rem 0"}),
 
             # E+F — Side-by-side pitch maps
             html.Div(
@@ -713,16 +696,19 @@ def defensive_pressing_card(data: dict) -> html.Div:
                             html.Div(
                                 [
                                     html.P(
-                                        "Actions by type · dotted line = median pressing line",
+                                        "Actions by type · white dotted = pressing line",
                                         className="kpi-subtitle",
                                         style={"marginBottom": "0.4rem", "textAlign": "center"},
                                     ),
-                                    dcc.Graph(
-                                        figure=_build_actions_scatter(
-                                            data.get("press_actions_detail", []),
-                                            data.get("pressing_line_median"),
+                                    html.Div(
+                                        dcc.Graph(
+                                            figure=_build_actions_scatter(
+                                                data.get("press_actions_detail", []),
+                                                data.get("pressing_line_median"),
+                                            ),
+                                            config={"displayModeBar": False},
                                         ),
-                                        config={"displayModeBar": False},
+                                        className="pitch-dark-container",
                                     ),
                                 ],
                                 style={"flex": "1", "minWidth": "0"},
@@ -735,12 +721,15 @@ def defensive_pressing_card(data: dict) -> html.Div:
                                         className="kpi-subtitle",
                                         style={"marginBottom": "0.4rem", "textAlign": "center"},
                                     ),
-                                    dcc.Graph(
-                                        figure=_build_combined_heatmap_outcomes(
-                                            data.get("zone_heatmap", {}),
-                                            data.get("press_actions_detail", []),
+                                    html.Div(
+                                        dcc.Graph(
+                                            figure=_build_combined_heatmap_outcomes(
+                                                data.get("zone_heatmap", {}),
+                                                data.get("press_actions_detail", []),
+                                            ),
+                                            config={"displayModeBar": False},
                                         ),
-                                        config={"displayModeBar": False},
+                                        className="pitch-dark-container",
                                     ),
                                 ],
                                 style={"flex": "1", "minWidth": "0"},

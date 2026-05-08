@@ -87,7 +87,7 @@ RIGHT_Y_MAX:  float = 33.33   # y < 33.33 = Right
 LONG_BALL_LENGTH: float = 32.0
 
 # Pressing success window (seconds after defensive action)
-PRESS_SUCCESS_SEC: float = 5.0
+PRESS_SUCCESS_SEC: float = 10.0
 
 # Opta type_id sets
 DEFENSIVE_ACTION_IDS: frozenset[int] = frozenset({4, 7, 8, 49})

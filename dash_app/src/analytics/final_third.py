@@ -309,13 +309,15 @@ def detect_ft_entries(
                     "si", "yes", "1", "true"
                 )
 
+                _pass_detected = False  # guard against double-counting
+
+                # ── Primary: use recorded pass_end_x ──
                 if pd.notna(end_x) and float(end_x) != 0:
                     end_xf = float(end_x)
                     end_yf = float(end_y) if pd.notna(end_y) else 50.0
                     if x < FT_X_THRESHOLD and end_xf >= FT_X_THRESHOLD:
                         elapsed = (float(row.get("_match_sec", 0) or 0)
                                    - poss_start_sec)
-                        # iloc in full_df
                         full_iloc = _find_full_iloc(play_idx_list[seq_idx], full_df)
                         entry = _make_ft_entry(
                             poss_id, "pass", end_xf, end_yf, x, y,
@@ -324,9 +326,40 @@ def detect_ft_entries(
                             float(first_x),
                         )
                         entries.append(entry)
+                        _pass_detected = True
 
-                elif has_through and x < FT_X_THRESHOLD:
-                    # Infer from next event
+                # ── Through-ball inference ──
+                if not _pass_detected and has_through and x < FT_X_THRESHOLD:
+                    if seq_idx + 1 < len(play_rows):
+                        nxt = play.iloc[seq_idx + 1]
+                        nx = nxt.get("x")
+                        if pd.notna(nx) and float(nx) >= FT_X_THRESHOLD:
+                            nxf = float(nx)
+                            nyf = float(nxt.get("y", 50)) if pd.notna(nxt.get("y")) else 50.0
+                            elapsed = (float(row.get("_match_sec", 0) or 0)
+                                       - poss_start_sec)
+                            full_iloc = _find_full_iloc(play_idx_list[seq_idx], full_df)
+                            entry = _make_ft_entry(
+                                poss_id, "pass", nxf, nyf, x, y,
+                                player, elapsed, list(passes_before_detail), row,
+                                poss_origin, poss_origin_evt, full_iloc,
+                                float(first_x),
+                            )
+                            entries.append(entry)
+                            _pass_detected = True
+
+                # ── Positional-jump fallback ──
+                # Covers cases where:
+                #   a) pass_end_x is absent (Opta didn't record the endpoint), OR
+                #   b) pass_end_x is recorded but lands before the FT while the next
+                #      possession event is already inside the FT — i.e. an untracked
+                #      carry (Pellegrino-style) bridged the gap between the pass
+                #      endpoint and the next event.
+                # In both cases the ball MUST have crossed x=66.67 at some point.
+                # We use the next event's position as the entry point.
+                if (not _pass_detected
+                        and x < FT_X_THRESHOLD
+                        and et not in ("offside pass", "blocked pass")):
                     if seq_idx + 1 < len(play_rows):
                         nxt = play.iloc[seq_idx + 1]
                         nx = nxt.get("x")
@@ -576,10 +609,29 @@ def _classify_ft_method(entry: dict) -> str:
     if entry.get("entry_type") == "high_regain":
         return "high_regain"
 
-    # 1. Transition / recovery — ball won back in OWN 1st third, FT reached fast
+    # 1. Transition / recovery — ball won back in OWN HALF, FT reached within 25 s
+    #    Aligned with the defensive-transition definition in defensive_structure.py:
+    #      - poss_start_x ≤ 50.0  : possession starts in team's own half
+    #        (was 33.33 — own defensive third — which was too strict; a recovery
+    #         at x=33.5 or a mid-block win at x=45 are equally transitional)
+    #      - elapsed_sec ≤ 25.0   : matches TRANSITION_WINDOW_SEC used in the
+    #        defensive phase to confirm a counter-attack is underway
     if (entry["poss_origin_event"] in ("ball recovery", "interception", "tackle")
-            and entry.get("poss_start_x", 100.0) <= 33.33
-            and entry["elapsed_sec"] <= RECOVERY_ENTRY_SEC):
+            and entry.get("poss_start_x", 100.0) <= 50.0
+            and entry["elapsed_sec"] <= 25.0):
+        return "transition_recovery"
+
+    # 1b. Fast-break from deep own half — applies even when poss_origin_event
+    #     is not a recovery event.  This captures cases where:
+    #       • the possession engine fragmented a single counter-attack into
+    #         multiple possession IDs (e.g. a 1-event opponent touch between
+    #         the ball recovery and the main build-up), so the carrying
+    #         possession starts with a pass instead of a recovery, yet the ball
+    #         is clearly in a counter-attack pattern (starts deep, reaches FT fast).
+    #       • poss_start_x ≤ 33.33 : deep in own defensive third
+    #       • elapsed_sec  ≤ 8.0   : reaches FT within 8 s (fast-break pace)
+    if (entry.get("poss_start_x", 100.0) <= 33.33
+            and entry["elapsed_sec"] <= 8.0):
         return "transition_recovery"
 
     # 2. Through ball qualifier on the entry pass (F3 #4)
