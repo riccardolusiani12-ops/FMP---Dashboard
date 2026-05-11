@@ -204,8 +204,8 @@ class TestClassifyAttackOrigin:
         result = classify_attack_origin(shot, poss_df, "penalty", 700.0)
         assert result == "Set Piece"
 
-    def test_counter_attack(self):
-        """Recovery + shot within 8s → Counter."""
+    def test_counter_attack_now_combination(self):
+        """Recovery in middle third + shot within 8s → Combination (Counter removed)."""
         events = [
             _event_row(event_type="ball recovery", x=40.0, y=50.0,
                        _match_sec=600, minute=10, second=0),
@@ -217,7 +217,7 @@ class TestClassifyAttackOrigin:
         poss_df = _make_poss_df(events)
         shot = pd.Series(events[-1])
         result = classify_attack_origin(shot, poss_df, "open_play", 600.0)
-        assert result == "Counter"
+        assert result == "Combination"
 
     def test_high_regain(self):
         """Recovery in attacking final third (x >= 66.67) + shot within 8s → High Regain."""
@@ -235,7 +235,7 @@ class TestClassifyAttackOrigin:
         assert result == "High Regain"
 
     def test_high_regain_not_counter_when_in_final_third(self):
-        """Recovery at x=70 (final third) should be High Regain, NOT Counter."""
+        """Recovery at x=70 (final third) should be High Regain."""
         events = [
             _event_row(event_type="interception", x=70.0, y=50.0,
                        _match_sec=600, minute=10, second=0),
@@ -248,10 +248,9 @@ class TestClassifyAttackOrigin:
         shot = pd.Series(events[-1])
         result = classify_attack_origin(shot, poss_df, "open_play", 600.0)
         assert result == "High Regain"
-        assert result != "Counter"
 
-    def test_counter_only_in_own_or_middle_third(self):
-        """Recovery at x=40 (middle third) + fast shot → Counter (not High Regain)."""
+    def test_recovery_in_middle_third_is_combination(self):
+        """Recovery at x=40 (middle third) + fast shot → Combination (Counter removed)."""
         events = [
             _event_row(event_type="tackle", x=40.0, y=50.0,
                        _match_sec=600, minute=10, second=0),
@@ -263,8 +262,7 @@ class TestClassifyAttackOrigin:
         poss_df = _make_poss_df(events)
         shot = pd.Series(events[-1])
         result = classify_attack_origin(shot, poss_df, "open_play", 600.0)
-        assert result == "Counter"
-        assert result != "High Regain"
+        assert result == "Combination"
 
     def test_high_regain_direct_score_from_opponent_error(self):
         """Goal scored directly from opponent error in final third → High Regain.
@@ -339,8 +337,8 @@ class TestClassifyAttackOrigin:
         )
         assert result != "High Regain"
 
-    def test_counter_too_slow_becomes_other(self):
-        """Recovery but shot after 8s → NOT Counter."""
+    def test_counter_too_slow_becomes_combination(self):
+        """Recovery but shot after 8s → Combination (no Counter category)."""
         events = [
             _event_row(event_type="ball recovery", x=40.0, y=50.0,
                        _match_sec=600, minute=10, second=0),
@@ -352,7 +350,7 @@ class TestClassifyAttackOrigin:
         poss_df = _make_poss_df(events)
         shot = pd.Series(events[-1])
         result = classify_attack_origin(shot, poss_df, "open_play", 600.0)
-        assert result != "Counter"
+        assert result == "Combination"
 
     def test_through_ball(self):
         """Pass with Through ball qualifier → Through Ball."""
@@ -436,8 +434,8 @@ class TestClassifyAttackOrigin:
         result = classify_attack_origin(shot, poss_df, "open_play", 600.0)
         assert result == "Combination"
 
-    def test_set_piece_takes_priority_over_counter(self):
-        """If both set-piece and counter criteria match, set piece wins."""
+    def test_set_piece_takes_priority_over_combination(self):
+        """Free-kick possession + fast shot within pass limit → Set Piece."""
         events = [
             _event_row(event_type="ball recovery", x=40.0, y=50.0,
                        _match_sec=600, minute=10, second=0,
@@ -449,15 +447,11 @@ class TestClassifyAttackOrigin:
         result = classify_attack_origin(shot, poss_df, "free_kick", 600.0)
         assert result == "Set Piece"
 
-    def test_cross_takes_priority_over_through_ball(self):
+    def test_through_ball_beats_cross_when_both_qualifiers(self):
         """
-        Regression test: Cross should be classified before Through Ball.
-        If a pass has both "Cross" and "Through ball" qualifiers,
-        it should be classified as Cross (more specific), not Through.
-        
-        Example: Bastoni pass at x=73.5, y=85.2 (wide left wing in final third).
+        Through Ball takes priority over Cross when both qualifiers are present.
+        Through Ball is highest priority because the data qualifier is authoritative.
         """
-        # Shot from a cross that also has through-ball qualifier
         events = [
             _event_row(event_type="pass", x=73.5, y=85.2,
                        _match_sec=918, minute=15, second=18,
@@ -467,12 +461,11 @@ class TestClassifyAttackOrigin:
         ]
         poss_df = _make_poss_df(events)
         shot = pd.Series(events[-1])
-        
-        # Should be "Cross", not "Through Ball" (qualifier) or "Open Play" (default)
+
         result = classify_attack_origin(shot, poss_df, "open_play", 918.0)
-        assert result == "Cross", (
-            f"Expected 'Cross' but got '{result}'. "
-            "Cross should have priority over Through Ball qualifier."
+        assert result == "Through Ball", (
+            f"Expected 'Through Ball' (highest priority) but got '{result}'. "
+            "Through Ball qualifier is authoritative and overrides Cross."
         )
 
     def test_set_piece_lookback_into_previous_possession(self):
@@ -541,7 +534,75 @@ class TestClassifyAttackOrigin:
         )
         assert result == "Combination"
 
-    def test_cross_to_header_across_possession_boundary(self):
+    def test_through_ball_beats_set_piece_lookback(self):
+        """Through ball qualifier in a prior possession overrides set-piece detection.
+
+        Regression for Barella shot (Inter-Como GW14, min 2'):
+        Chain: free_kick possession (with through-ball pass) →
+               opponent save possession → Inter shot possession.
+        The through-ball pass is in poss N, the shot is in poss N+2.
+        Even though poss N has a free_kick origin (within 15 s), the explicit
+        through-ball qualifier must win because it is authoritative data.
+        """
+        # Poss N (Inter, free_kick): two passes, last one is a through ball
+        prev_events = [
+            {**_event_row(event_type="pass", x=45.9, y=50.0,
+                          _match_sec=163, minute=2, second=43,
+                          team_name="My Team FC"),
+             "poss_id": 21, "poss_origin": "free_kick"},
+            {**_event_row(event_type="pass", x=62.9, y=50.0,
+                          _match_sec=172, minute=2, second=52,
+                          team_name="My Team FC",
+                          **{"Through ball": "Si",
+                             "Intentional Assist": "Si",
+                             "Pass End X": 76.8, "Pass End Y": 45.6}),
+             "poss_id": 21, "poss_origin": "free_kick"},
+        ]
+        # Poss N+1 (opponent): goalkeeper save
+        save_event = {
+            **_event_row(event_type="save", x=11.0, y=50.0,
+                         _match_sec=175, minute=2, second=55,
+                         team_name="Opponent FC"),
+            "poss_id": 22, "poss_origin": "open_play",
+        }
+        # Poss N+2 (Inter): shot
+        shot_event = {
+            **_shot_row(x=84.9, y=45.6, _match_sec=175,
+                        minute=2, second=55,
+                        team_name="My Team FC"),
+            "poss_id": 23, "poss_origin": "open_play",
+        }
+
+        match_df = pd.DataFrame(prev_events + [save_event, shot_event])
+        poss_df = match_df[match_df["poss_id"] == 23].copy()
+        shot = pd.Series(shot_event)
+
+        result = classify_attack_origin(
+            shot, poss_df, "open_play", 175.0, match_df=match_df,
+        )
+        assert result == "Through Ball", (
+            f"Expected 'Through Ball' but got '{result}'. "
+            "Through Ball in prior possession must be detected via cross-possession lookback."
+        )
+
+    def test_cut_back(self):
+        """Pass with Pull Back qualifier → Cut Back."""
+        events = [
+            _event_row(event_type="pass", x=88.0, y=5.0,
+                       _match_sec=600, minute=10, second=0,
+                       **{"Pass End X": 88.0, "Pass End Y": 30.0}),
+            _event_row(event_type="pass", x=97.0, y=5.0,
+                       _match_sec=605, minute=10, second=5,
+                       **{"Pull Back": "Si",
+                          "Pass End X": 90.0, "Pass End Y": 50.0}),
+            _shot_row(x=90.0, y=50.0, _match_sec=607, minute=10, second=7),
+        ]
+        poss_df = _make_poss_df(events)
+        shot = pd.Series(events[-1])
+        result = classify_attack_origin(shot, poss_df, "open_play", 600.0)
+        assert result == "Cut Back"
+
+
         """Cross → aerial duel (new poss) → goal should still be Cross.
 
         Mirrors real-world pattern (e.g. Thuram 61:40 in Inter-Torino):

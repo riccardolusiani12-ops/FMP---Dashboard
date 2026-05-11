@@ -85,11 +85,17 @@ def _offensive_phase(match_csv: Path, team: str) -> html.Div:
 def _defensive_phase(match_csv: Path, team: str) -> html.Div:
     from src.analytics.defensive_pressing import analyse_defensive_pressing
     from src.analytics.defensive_structure import analyse_defensive_structure
+    from src.analytics.defensive_castle import analyse_defensive_castle
+    from src.analytics.chance_conceded import analyse_chance_conceded
     from src.components.defensive_pressing_cards import defensive_pressing_card
     from src.components.defensive_structure_cards import defensive_structure_card
+    from src.components.defensive_castle_cards import defensive_castle_card
+    from src.components.chance_conceded_cards import chance_conceded_card
 
     d1_data = analyse_defensive_pressing(match_csv, team)
     d2_data = analyse_defensive_structure(match_csv, team)
+    d3_data = analyse_defensive_castle(match_csv, team)
+    d4_data = analyse_chance_conceded(match_csv, team)
 
     # Pass D1 pressing_line_median into D2 data so the offside line chart
     # can overlay both reference lines without re-computing D1 metrics.
@@ -103,6 +109,10 @@ def _defensive_phase(match_csv: Path, team: str) -> html.Div:
         _safe_render(defensive_pressing_card, d1_data),
         html.Div(style={"height": "2rem"}),
         _safe_render(defensive_structure_card, d2_data),
+        html.Div(style={"height": "2rem"}),
+        _safe_render(defensive_castle_card, d3_data),
+        html.Div(style={"height": "2rem"}),
+        _safe_render(chance_conceded_card, d4_data),
     ])
 
 

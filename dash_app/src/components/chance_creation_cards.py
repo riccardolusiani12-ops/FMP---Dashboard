@@ -19,16 +19,16 @@ import plotly.graph_objects as go
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ORIGIN_LABELS = [
-    "Set Piece", "High Regain", "Counter", "Cross", "Through Ball", "Combination",
+    "Set Piece", "High Regain", "Cross", "Through Ball", "Cut Back", "Combination",
 ]
 MATRIX_ROWS = ["N", "xG", "SoT%", "GS"]
 
 ORIGIN_COLORS = {
     "Set Piece":    "#22c55e",   # green
     "High Regain":  "#ef4444",   # red — aggressive pressing recovery
-    "Counter":      "#f97316",   # orange
     "Cross":        "#06b6d4",   # cyan
     "Through Ball": "#8b5cf6",   # purple
+    "Cut Back":     "#f97316",   # orange
     "Combination":  "#3b82f6",   # blue — patient build-up
     "TOTAL":        "#8a1f33",   # primary
 }
@@ -36,9 +36,9 @@ ORIGIN_COLORS = {
 ORIGIN_ICONS = {
     "Set Piece":    "bi-flag-fill",
     "High Regain":  "bi-shield-fill-exclamation",
-    "Counter":      "bi-lightning-charge-fill",
     "Cross":        "bi-arrow-up-right",
     "Through Ball": "bi-chevron-double-up",
+    "Cut Back":     "bi-arrow-return-left",
     "Combination":  "bi-shuffle",
 }
 

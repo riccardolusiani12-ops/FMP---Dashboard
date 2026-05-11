@@ -16,13 +16,13 @@ Core outputs:
   • Per-method breakdowns
 
 Attack origin classification (priority-ordered):
-  1. Set Piece    — shot directly from an attacking restart (≤ 5 passes, within 15 s)
+  1. Through Ball — through-ball qualifier on preceding pass (qualifier-detected, highest priority)
+  2. Set Piece    — shot directly from an attacking restart (≤ 5 passes, within 15 s)
                    Goal kicks / GK distribution are excluded (defensive restarts).
-  2. High Regain  — recovery in final third + shot within 8 s;
+  3. High Regain  — recovery in final third + shot within 8 s;
                    excludes recoveries from opponent set-piece contexts.
-  3. Counter      — recovery in own/middle third + shot within 8 s
   4. Cross        — cross qualifier or wide-zone FT pass (open play)
-  5. Through Ball — through-ball qualifier on preceding pass (qualifier-detected only)
+  5. Cut Back     — pull-back pass qualifier (Q195) from the by-line
   Default: Combination — patient passing build-up (in-box OR out-of-box)
 
 Coordinate system:
@@ -90,12 +90,11 @@ SET_PIECE_MAX_PASSES = 5
 
 # Origin labels (column order for the matrix — roughly by speed of attack)
 ORIGIN_LABELS = [
-    "Set Piece", "High Regain", "Counter", "Cross", "Through Ball", "Combination",
+    "Set Piece", "High Regain", "Cross", "Through Ball", "Cut Back", "Combination",
 ]
 ORIGIN_DEFAULT = "Combination"  # patient passing-chain build-up (in-box or out-of-box)
 
 # High Regain: recovery in attacking third + fast shot
-# Counter:     recovery in own/middle third + fast shot
 HIGH_REGAIN_X_MIN = FT_X_THRESHOLD  # 66.67 — recovery must be in the final third
 
 # Metric row labels (all sums / counts for consistent aggregation)
@@ -214,45 +213,51 @@ def classify_attack_origin(
 
     Returns
     -------
-    str — one of: "Set Piece", "High Regain", "Counter", "Through Ball",
-          "Cross", "Combination"
+    str — one of: "Through Ball", "Set Piece", "High Regain",
+          "Cross", "Cut Back", "Combination"
     """
     shot_sec = _match_sec(shot_row)
     shot_x = float(shot_row.get("x", 0))
     shot_y = float(shot_row.get("y", 50))
 
-    # ── Priority 1: Set Piece ──
-    # Check if shot occurs within 12s of a dead-ball restart event
+    # ── Priority 1: Through Ball ──
+    # Qualifier-detected through balls take highest priority.
+    # The "Through ball" qualifier on the assist pass is authoritative data —
+    # it must not be overridden by indirect set-piece proximity detection.
+    # This fixes the case where a through ball after a restart (e.g. goal kick
+    # from a saved shot) was incorrectly classified as Set Piece.
+    if _check_through_ball(shot_row, shot_sec, poss_events, match_df=match_df):
+        log.debug("Shot at %.0fs classified: Through Ball", shot_sec)
+        return "Through Ball"
+
+    # ── Priority 2: Set Piece ──
+    # Check if shot occurs within 15s of a dead-ball restart event (up to 3
+    # previous possessions). Penalty is always Set Piece.
     if _check_set_piece(shot_row, shot_sec, poss_events, poss_origin,
                         match_df=match_df):
         log.debug("Shot at %.0fs classified: Set Piece", shot_sec)
         return "Set Piece"
 
-    # ── Priority 2: High Regain ──
+    # ── Priority 3: High Regain ──
     # Recovery in the attacking final third (x ≥ 66.67) + shot within 8s
     if _check_high_regain(poss_events, shot_sec, poss_start_sec,
                           shot_row=shot_row, match_df=match_df):
         log.debug("Shot at %.0fs classified: High Regain", shot_sec)
         return "High Regain"
 
-    # ── Priority 3: Counter ──
-    # Recovery in own/middle third (x < 66.67) + shot within 8s
-    if _check_counter(poss_origin, poss_events, shot_sec, poss_start_sec):
-        log.debug("Shot at %.0fs classified: Counter", shot_sec)
-        return "Counter"
+    # ── Priority 4: Cut Back ──
+    # Pull-back pass from the by-line into the box (F3 qualifier 195).
+    # Checked before Cross because a by-line pass also matches wide-zone
+    # cross detection; the Pull Back qualifier is the definitive signal.
+    if _check_cut_back(shot_row, shot_sec, poss_events):
+        log.debug("Shot at %.0fs classified: Cut Back", shot_sec)
+        return "Cut Back"
 
-    # ── Priority 4: Cross ──
-    # More specific: wide-zone final-third pass + final-third shot
+    # ── Priority 5: Cross ──
+    # Wide-zone final-third pass + cross qualifier or wide-zone origin.
     if _check_cross(shot_row, shot_sec, poss_events, match_df=match_df):
         log.debug("Shot at %.0fs classified: Cross", shot_sec)
         return "Cross"
-
-    # ── Priority 5: Through Ball ──
-    # Only qualifier-detected through balls (F3 #4); default Combination
-    # handles patient build-up without the qualifier.
-    if _check_through_ball(shot_row, shot_sec, poss_events):
-        log.debug("Shot at %.0fs classified: Through Ball", shot_sec)
-        return "Through Ball"
 
     # ── Default: Combination — patient passing-chain build-up.
     # Covers both in-box and out-of-box shots that don't match the
@@ -343,7 +348,10 @@ def _check_set_piece(
         if _is_set_piece_event(row):
             return passes_in_poss <= SET_PIECE_MAX_PASSES
 
-    # ── B. Previous possessions (up to 3 hops) ────────────────────────────
+    # ── B. Previous possessions (up to 6 hops) ────────────────────────────
+    # Increased from 3 to 6 to handle longer chains:
+    #   corner → opp aerial → team aerial → save → shot (4 hops needed)
+    # The 15 s time window is the primary constraint against false positives.
     if match_df is None or "poss_id" not in match_df.columns or pd.isna(shot_poss_id):
         return False
 
@@ -351,7 +359,7 @@ def _check_set_piece(
         _match_sec(poss_events.iloc[0]) if not poss_events.empty else shot_sec
     )
 
-    for offset in range(1, 4):
+    for offset in range(1, 7):
         prev_id = int(shot_poss_id) - offset
         prev_poss = match_df[match_df["poss_id"] == prev_id]
         if prev_poss.empty:
@@ -573,49 +581,21 @@ def _check_high_regain(
     return 0 <= elapsed <= COUNTER_MAX_SEC
 
 
-def _check_counter(
-    poss_origin: str,
-    poss_events: pd.DataFrame,
-    shot_sec: float,
-    poss_start_sec: float,
-) -> bool:
-    """Check if shot is from a counter-attack.
-
-    A counter-attack is a possession that:
-      - Starts with a recovery event (ball recovery, interception, tackle)
-      - The recovery occurs OUTSIDE the final third (x < 66.67)
-      - The shot occurs within ``COUNTER_MAX_SEC`` (8s) of possession start
-
-    Recoveries in the final third are classified as "High Regain" instead.
-    """
-    if poss_events.empty:
-        return False
-
-    rec = _find_first_recovery(poss_events)
-    if rec is None:
-        return False
-
-    _et, rec_x, _rec_sec = rec
-
-    # Recovery must be OUTSIDE the final third (own/middle third)
-    if rec_x >= HIGH_REGAIN_X_MIN:
-        return False
-
-    # Shot within 8 seconds of possession start
-    elapsed = shot_sec - poss_start_sec
-    return 0 <= elapsed <= COUNTER_MAX_SEC
-
-
-def _check_through_ball(
+def _check_cut_back(
     shot_row: pd.Series,
     shot_sec: float,
     poss_events: pd.DataFrame,
 ) -> bool:
-    """Check if shot is from a through ball."""
+    """Check if shot is from a cut-back / pull-back pass.
+
+    A cut-back (Opta qualifier 195 — Pull Back) is a pass from a player who
+    has reached the opponent's by-line and cuts the ball back to a teammate.
+    Detection mirrors ``_check_through_ball``: last pass first, then a full
+    12-second lookback.
+    """
     lookback_start = shot_sec - THROUGH_BALL_LOOKBACK_SEC
 
     # Check the last pass before the shot
-    last_pass = None
     for i in range(len(poss_events) - 1, -1, -1):
         row = poss_events.iloc[i]
         row_sec = _match_sec(row)
@@ -625,17 +605,115 @@ def _check_through_ball(
             break
         et = str(row.get("event_type", row.get("event", ""))).strip().lower()
         if et == "pass":
-            last_pass = row
+            if _has_qualifier(row, "Pull Back", "pull_back"):
+                return True
             break
-
-    # Check last pass for through ball qualifier
-    if last_pass is not None:
-        if _has_qualifier(last_pass, "Through ball", "through_ball"):
-            return True
 
     # Check any pass in the 12s lookback window
     for i in range(len(poss_events)):
         row = poss_events.iloc[i]
+        row_sec = _match_sec(row)
+        if row_sec < lookback_start:
+            continue
+        if row_sec >= shot_sec:
+            break
+        et = str(row.get("event_type", row.get("event", ""))).strip().lower()
+        if et == "pass" and _has_qualifier(row, "Pull Back", "pull_back"):
+            return True
+
+    return False
+
+
+def _check_through_ball(
+    shot_row: pd.Series,
+    shot_sec: float,
+    poss_events: pd.DataFrame,
+    *,
+    match_df: Optional[pd.DataFrame] = None,
+) -> bool:
+    """Check if shot is from a through ball (F3 qualifier #4).
+
+    Handles the common pattern where the through-ball pass lives in a
+    different possession than the shot — e.g. a goalkeeper save event is
+    recorded as an opponent possession between the assisting pass and the
+    shot:
+
+        Poss N   (team): ... → through-ball pass
+        Poss N+1 (opp):  save / aerial (possession break)
+        Poss N+2 (team): shot  ← poss_events here
+
+    Detection:
+      A. Current possession: last pass before shot + full 12 s window scan.
+      B. Previous same-team possessions (up to 3 hops back, within 12 s):
+         scan for through-ball pass after skipping over any intervening
+         opponent-possession events.
+    """
+    lookback_start = shot_sec - THROUGH_BALL_LOOKBACK_SEC
+
+    # ── A. Current possession ──────────────────────────────────────────────
+    if _check_through_ball_in_events(shot_sec, lookback_start, poss_events):
+        return True
+
+    # ── B. Previous possessions (up to 3 hops) ────────────────────────────
+    if match_df is None or "poss_id" not in poss_events.columns:
+        return False
+
+    shot_poss_id = int(poss_events["poss_id"].iloc[0])
+    shot_team = canonical_name(
+        str(shot_row.get("team_name", "")).strip()
+    ).lower()
+
+    for offset in range(1, 4):
+        prev_id = shot_poss_id - offset
+        prev_poss = match_df[match_df["poss_id"] == prev_id]
+        if prev_poss.empty:
+            continue
+
+        # Stop walking back if the possession is entirely before the window
+        if _match_sec(prev_poss.iloc[-1]) < lookback_start:
+            break
+
+        # Skip over opponent possessions (e.g. save event), keep looking
+        prev_team = canonical_name(
+            str(prev_poss["team_name"].dropna().iloc[-1]).strip()
+            if not prev_poss["team_name"].dropna().empty else ""
+        ).lower()
+        if prev_team != shot_team:
+            continue
+
+        if _check_through_ball_in_events(shot_sec, lookback_start, prev_poss):
+            log.debug(
+                "Through ball detected in prev poss %d for shot at %.0fs",
+                prev_id, shot_sec,
+            )
+            return True
+
+    return False
+
+
+def _check_through_ball_in_events(
+    shot_sec: float,
+    lookback_start: float,
+    events: pd.DataFrame,
+) -> bool:
+    """Return True if *events* contains a through-ball pass within the window."""
+    # Check the last pass before the shot first (most likely candidate)
+    for i in range(len(events) - 1, -1, -1):
+        row = events.iloc[i]
+        row_sec = _match_sec(row)
+        if row_sec >= shot_sec:
+            continue
+        if row_sec < lookback_start:
+            break
+        et = str(row.get("event_type", row.get("event", ""))).strip().lower()
+        if et == "pass":
+            if _has_qualifier(row, "Through ball", "through_ball"):
+                return True
+            break  # last pass found, no qualifier
+
+    # Also scan all passes in the 12 s lookback window
+    for i in range(len(events)):
+        row = events.iloc[i]
         row_sec = _match_sec(row)
         if row_sec < lookback_start:
             continue

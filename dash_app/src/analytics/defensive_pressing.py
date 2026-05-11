@@ -90,8 +90,18 @@ LONG_BALL_LENGTH: float = 32.0
 PRESS_SUCCESS_SEC: float = 10.0
 
 # Opta type_id sets
-DEFENSIVE_ACTION_IDS: frozenset[int] = frozenset({4, 7, 8, 49})
+# Extended to match D3 for a single consistent total across the dashboard:
+#   4  Foul (committed)  7  Tackle   8  Interception  12  Clearance
+#  44  Aerial            45 Challenge (auto-fail)      49  Ball Recovery
+#  74  Blocked Pass
+DEFENSIVE_ACTION_IDS: frozenset[int] = frozenset({4, 7, 8, 12, 44, 45, 49, 74})
 OPPONENT_PASS_IDS:    frozenset[int] = frozenset({1, 2, 74})
+
+# Aerial duels (type_id=44) at x >= this threshold are in the opponent's box
+# and represent ATTACKING header contests (from corners, crosses, set pieces),
+# NOT defensive actions. They are excluded from all defensive counts.
+AERIAL_TYPE_ID:        int   = 44
+AERIAL_OPP_BOX_X_MIN: float = 83.33   # = final zone row start (zones 16-18)
 
 
 def _is_team_def_action(row: pd.Series) -> bool:
@@ -102,14 +112,23 @@ def _is_team_def_action(row: pd.Series) -> bool:
       * outcome=0 on the FOULER   → foul committed  → real defensive action
       * outcome=1 on the VICTIM   → foul won        → NOT a defensive action
     Tackles, Interceptions and Ball Recoveries are kept unconditionally.
+
+    Aerial duels (type_id=44) at x >= 83.33 (opponent box, zones 16-18) are
+    attacking header contests from corners/crosses and are NOT defensive actions.
     """
     tid = row.get("type_id")
     if pd.isna(tid) or int(tid) not in DEFENSIVE_ACTION_IDS:
         return False
-    if int(tid) == 4:  # Foul
+    tid = int(tid)
+    if tid == 4:  # Foul — committed side only
         outcome = row.get("outcome", 0)
         try:
-            return int(outcome) == 0  # committed foul only
+            return int(outcome) == 0
+        except (ValueError, TypeError):
+            return False
+    if tid == AERIAL_TYPE_ID:  # Aerial — exclude opponent-box attacking headers
+        try:
+            return float(row.get("x", 0) or 0) < AERIAL_OPP_BOX_X_MIN
         except (ValueError, TypeError):
             return False
     return True
@@ -417,14 +436,12 @@ def compute_pressing_success(
         )
         window = full_sorted[win_mask]
 
-        # ── Early-exit: any committed foul → always FAILURE ────────────────
-        # When the pressing team commits a foul (type_id=4, outcome=0) the
-        # referee stops play against them regardless of what follows.
-        # Opta logs the fouler first (our player, outcome=0) then the victim
-        # (opponent, outcome=1). The 5-second window may contain only
-        # Deleted/Start-delay records so the window scan is unreliable here.
+        # ── Early-exit: certain events are ALWAYS a failure ────────────────
+        # Foul committed (4, outcome=0): referee stops play against us.
+        # Challenge (45): by Opta definition the opponent successfully dribbled
+        #   past our player → the opponent kept the ball → never a success.
         act_tid = int(act.get("type_id", 0) or 0)
-        if act_tid == 4:
+        if act_tid in (4, 45):
             results.append({"success": False, "zone_group": act["zone_group"], "corridor": act["corridor"]})
             continue
 
@@ -598,7 +615,11 @@ _TYPE_LABEL = {
     4:  "Foul",
     7:  "Tackle",
     8:  "Interception",
+    12: "Clearance",
+    44: "Aerial",
+    45: "Challenge",
     49: "Ball Recovery",
+    74: "Blocked Pass",
 }
 
 

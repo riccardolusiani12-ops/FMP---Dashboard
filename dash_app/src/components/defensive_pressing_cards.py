@@ -112,14 +112,14 @@ def _section_overview(d: dict) -> html.Div:
             html.Div(
                 [
                     _mini_kpi(
+                        "Total Defensive Actions", total,
+                        "tackles · interceptions · clearances · aerials · recoveries",
+                        PRIMARY, "bi-activity",
+                    ),
+                    _mini_kpi(
                         "PPDA (Final Third)", ppda_ft,
                         "opp. passes per def. action in their own third",
                         _ppda_color(d.get("ppda_high")), "bi-shield-fill-exclamation",
-                    ),
-                    _mini_kpi(
-                        "Defensive Actions", total,
-                        "tackles · interceptions · fouls · recoveries",
-                        PRIMARY, "bi-activity",
                     ),
                     _mini_kpi(
                         "Press Success", f"{success}%",
@@ -466,10 +466,14 @@ _X_EDGES = [0, 16.67, 33.33, 50.0, 66.67, 83.33, 100.0]
 _Y_EDGES = [0, 33.33, 66.67, 100.0]
 
 ACTION_COLORS = {
-    "Tackle":       "#3b82f6",    # blue
-    "Interception": "#22c55e",    # green
-    "Foul":         "#f97316",    # orange
+    "Tackle":        "#3b82f6",   # blue
+    "Interception":  "#22c55e",   # green
+    "Foul":          "#f97316",   # orange
     "Ball Recovery": "#8b5cf6",   # purple
+    "Clearance":     "#f59e0b",   # amber
+    "Aerial":        "#06b6d4",   # cyan
+    "Challenge":     "#ec4899",   # pink
+    "Blocked Pass":  "#84cc16",   # lime
 }
 
 
