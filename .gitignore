@@ -16,6 +16,9 @@ venv/
 *.xlsx
 *.json
 
+# ── Large model/feature files (>100MB – GitHub limit) ──────────────────────────
+data/serie_a_pv_features.parquet
+
 # ── OS / Editor ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
