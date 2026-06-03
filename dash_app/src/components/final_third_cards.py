@@ -22,31 +22,30 @@ from src.components.final_third_pitch import (
     ft_zone_outcome_heatmap,
 )
 
-# Display order for methods
+# Display order for methods (matches _classify_ft_method() priority)
 METHOD_ORDER = [
-    "high_regain",
     "transition_recovery", "through_ball", "switch_of_play", "set_piece",
-    "long_ball", "individual_carry", "short_pass",
+    "long_ball", "cross_delivery", "individual_carry", "short_pass",
 ]
 
 METHOD_ICONS = {
-    "high_regain":         "bi-stars",
     "transition_recovery": "bi-lightning-charge-fill",
     "through_ball":        "bi-chevron-double-up",
     "switch_of_play":      "bi-arrow-left-right",
     "set_piece":           "bi-flag-fill",
     "long_ball":           "bi-arrow-up-right",
+    "cross_delivery":      "bi-send-fill",
     "individual_carry":    "bi-person-walking",
     "short_pass":          "bi-dot",
 }
 
 METHOD_DESCRIPTIONS = {
-    "high_regain":         "Ball won back directly inside the final third",
-    "transition_recovery": "Ball won in own third, FT reached within 8 s",
+    "transition_recovery": "Ball won in own half, FT reached within 15 s",
     "through_ball":        "Penetrative pass splitting the defence",
     "switch_of_play":      "Lateral pass changing the point of attack",
     "set_piece":           "Set-piece played directly into the final third",
-    "long_ball":           "Direct pass over 32 m, aerial ball, or cross from own half",
+    "long_ball":           "Direct pass over 32 m or aerial ball into the FT",
+    "cross_delivery":      "Cross from wide area into or across the final third",
     "individual_carry":    "Dribble or run with the ball into FT",
     "short_pass":          "Patient build-up with ≥ 5 passes",
 }
@@ -79,11 +78,129 @@ def _mini_kpi(label: str, value, subtitle: str, color: str, icon: str) -> html.D
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# TEMPO CARD — with 15-minute windows dropdown
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _tempo_card(m: dict) -> html.Div:
+    """
+    Render the Tempo KPI card with passes per minute.
+    Includes a Details/Summary dropdown showing 15-minute window breakdown.
+    """
+    ppm = m.get("passes_per_minute", 0.0)
+    windows = m.get("tempo_windows", [])
+
+    window_items = []
+    for w in windows:
+        start_min = w.get("start_min", 0)
+        end_min = w.get("end_min", 0)
+        passes = w.get("passes", 0)
+        w_ppm = w.get("ppm", 0.0)
+
+        window_items.append(
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span(
+                                f"{start_min}'-{end_min}'",
+                                style={
+                                    "fontSize": "0.75rem",
+                                    "fontWeight": "600",
+                                    "color": "var(--text-primary)",
+                                    "minWidth": "50px",
+                                },
+                            ),
+                            html.Span(
+                                f"{passes} passes",
+                                style={
+                                    "fontSize": "0.75rem",
+                                    "color": "var(--text-secondary)",
+                                    "flex": "1",
+                                },
+                            ),
+                            html.Span(
+                                f"{w_ppm} ppm",
+                                style={
+                                    "fontSize": "0.75rem",
+                                    "fontWeight": "600",
+                                    "color": "#f59e0b",
+                                },
+                            ),
+                        ],
+                        style={
+                            "display": "flex",
+                            "alignItems": "center",
+                            "justifyContent": "space-between",
+                            "gap": "8px",
+                        },
+                    ),
+                ],
+                style={
+                    "padding": "6px 0",
+                    "borderBottom": "1px solid var(--border-light)",
+                },
+            )
+        )
+
+    return html.Div(
+        [
+            html.Details(
+                [
+                    html.Summary(
+                        html.Div(
+                            [
+                                html.Div(
+                                    html.I(className="bi bi-lightning-fill",
+                                           style={"color": "#f59e0b", "fontSize": "1.3rem"}),
+                                    className="kpi-icon",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Span("Tempo", className="kpi-label"),
+                                        html.Span(f"{ppm}", className="kpi-value"),
+                                        html.Span("passes per minute (qual. poss.)",
+                                                  className="kpi-subtitle",
+                                                  style={"color": "#f59e0b"}),
+                                    ],
+                                    className="kpi-text",
+                                ),
+                            ],
+                            style={
+                                "display": "flex",
+                                "alignItems": "center",
+                                "cursor": "pointer",
+                                "width": "100%",
+                            },
+                        ),
+                        style={
+                            "cursor": "pointer",
+                            "listStyle": "none",
+                        },
+                    ),
+                    html.Div(
+                        window_items,
+                        style={
+                            "marginTop": "8px",
+                            "paddingTop": "8px",
+                            "borderTop": "1px solid var(--border-light)",
+                        },
+                    ) if window_items else html.Div(),
+                ],
+                className="kpi-card",
+                style={
+                    "cursor": "pointer",
+                },
+            ),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # A. POSSESSION OVERVIEW
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _section_possession(m: dict) -> html.Div:
-    """Top-level overview: possession share + final-third entry rate."""
+    """Top-level overview: possession share + final-third entry rate + tempo."""
     return html.Div(
         [
             html.H6("Possession & Final Third Entry", className="buildup-subsection-title"),
@@ -114,6 +231,7 @@ def _section_possession(m: dict) -> html.Div:
                         "total touches in penalty area",
                         "#ef4444", "bi-box-arrow-in-down-right",
                     ),
+                    _tempo_card(m),
                 ],
                 className="team-kpi-row",
             ),
@@ -266,8 +384,8 @@ def _section_methods(m: dict) -> html.Div:
         [
             html.H6("How — Entry Method", className="buildup-subsection-title"),
             html.Div(
-                "Priority: Through Ball → Switch of Play → Set-Piece → "
-                "Long Ball → Transition → Carry → Combination → Short Pass",
+                "Priority: Transition → Through Ball → Switch of Play → "
+                "Set-Piece → Long Ball → Cross Delivery → Carry → Short Pass",
                 style={"fontSize": "0.78rem", "color": "var(--text-muted)",
                        "marginBottom": "0.6rem"},
             ),

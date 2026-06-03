@@ -634,7 +634,7 @@ def compute_defensive_transitions(
         n2 = sum(1 for t in qualified if t["outcome"] == "N2")
         n3 = sum(1 for t in qualified if t["outcome"] == "N3")
 
-        transition_rate = round(q / total_team_poss * 100, 1) if total_team_poss else 0.0
+        transition_rate = round(q / total_transitions * 100, 1) if total_transitions else 0.0
 
         react_times = [t["reaction_time"] for t in qualified]
         avg_reaction = round(float(np.mean(react_times)), 2) if react_times else 0.0

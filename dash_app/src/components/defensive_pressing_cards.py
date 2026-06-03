@@ -98,13 +98,20 @@ def _ppda_color(val: float | None) -> str:
     return "#ef4444"
 
 
+OFFSIDE_COLOR = "#a855f7"   # purple
+
+
 def _section_overview(d: dict) -> html.Div:
-    """Three headline KPI cards: Final Third PPDA, Total Def. Actions, Press Success."""
+    """Five headline KPI cards: Total Def. Actions, PPDA, Press Success, Offsides Provoked, Offside Line."""
     ppda_ft  = _fmt_ppda(d.get("ppda_high"))
     total    = d.get("total_def_actions", 0)
     success  = d.get("press_success_rate", 0.0)
     succ_num = d.get("press_success_successful", 0)
     succ_tot = d.get("press_success_total", 0)
+
+    offside_n    = d.get("offsides_provoked", 0) or 0
+    offside_line = d.get("offside_line_median")
+    offside_line_str = f"{offside_line:.1f}" if offside_line is not None else "N/A"
 
     return html.Div(
         [
@@ -125,6 +132,16 @@ def _section_overview(d: dict) -> html.Div:
                         "Press Success", f"{success}%",
                         f"{succ_num} / {succ_tot} — possession ≥ 10 s after action",
                         SUCCESS_COLOR, "bi-check-circle-fill",
+                    ),
+                    _mini_kpi(
+                        "Offsides Provoked", offside_n,
+                        "total offside traps triggered",
+                        OFFSIDE_COLOR, "bi-flag-fill",
+                    ),
+                    _mini_kpi(
+                        "Offside Line (median)", offside_line_str,
+                        "median x-position of defensive line",
+                        OFFSIDE_COLOR, "bi-rulers",
                     ),
                 ],
                 className="team-kpi-row",
@@ -700,7 +717,7 @@ def defensive_pressing_card(data: dict) -> html.Div:
                             html.Div(
                                 [
                                     html.P(
-                                        "Actions by type · white dotted = pressing line",
+                                        "Actions by type · white dotted = pressing line · purple dotted = offside line",
                                         className="kpi-subtitle",
                                         style={"marginBottom": "0.4rem", "textAlign": "center"},
                                     ),
@@ -709,6 +726,7 @@ def defensive_pressing_card(data: dict) -> html.Div:
                                             figure=_build_actions_scatter(
                                                 data.get("press_actions_detail", []),
                                                 data.get("pressing_line_median"),
+                                                data.get("offside_line_median"),
                                             ),
                                             config={"displayModeBar": False},
                                         ),

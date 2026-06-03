@@ -90,7 +90,8 @@ SET_PIECE_MAX_PASSES = 5
 
 # Origin labels (column order for the matrix — roughly by speed of attack)
 ORIGIN_LABELS = [
-    "Set Piece", "High Regain", "Cross", "Through Ball", "Cut Back", "Combination",
+    "Set Piece", "High Regain", "Cross", "Through Ball", "Cut Back",
+    "Individual Play", "Combination",
 ]
 ORIGIN_DEFAULT = "Combination"  # patient passing-chain build-up (in-box or out-of-box)
 
@@ -109,11 +110,30 @@ SET_PIECE_EVENTS = frozenset({
 
 # Attacking set-piece qualifier columns (Opta CSV).
 # Goal Kick / gk_kick_from_hands intentionally omitted — defensive restarts.
+# "Direct free" is the Opta qualifier set when a shot/goal is taken
+# directly from a free kick (no intermediate pass). It is authoritative
+# and must be included so that direct free-kick goals are never missed by
+# the time-window lookback (which can fail when VAR/setup delays > 15 s).
 SET_PIECE_QUALIFIER_COLS = (
     "Corner taken", "corner_taken",
     "Free kick taken", "free_kick_taken",
+    "Free kick", "free_kick",     # set on shot/goal when struck from a FK
+    "Direct free", "direct_free",
     "Throw In", "throw_in",
     "Throw In set piece",
+    "Penalty", "penalty",
+)
+
+# Qualifier columns that, when present directly on the shot/goal row,
+# are sufficient on their own to classify the attempt as Set Piece — no
+# time-window or pass-count gate is needed.  These are first-party Opta
+# qualifiers that Opta only attaches when the ball was genuinely struck
+# from a dead-ball situation.
+_DIRECT_SP_SHOT_QUALS = (
+    "Free kick taken", "free_kick_taken",
+    "Free kick", "free_kick",     # set on shot/goal when struck from a FK
+    "Direct free", "direct_free",
+    "Corner taken", "corner_taken",
     "Penalty", "penalty",
 )
 
@@ -214,7 +234,7 @@ def classify_attack_origin(
     Returns
     -------
     str — one of: "Through Ball", "Set Piece", "High Regain",
-          "Cross", "Cut Back", "Combination"
+          "Cross", "Cut Back", "Individual Play", "Combination"
     """
     shot_sec = _match_sec(shot_row)
     shot_x = float(shot_row.get("x", 0))
@@ -238,14 +258,24 @@ def classify_attack_origin(
         log.debug("Shot at %.0fs classified: Set Piece", shot_sec)
         return "Set Piece"
 
-    # ── Priority 3: High Regain ──
+    # ── Priority 3: Individual Play ──
+    # Opta attaches "Individual Play" = "Si" directly to the shot/goal event
+    # when the player created the chance entirely on their own (dribble, no
+    # assist).  Like "Direct free" it is first-party data — no additional
+    # heuristic is needed.  Checked after Set Piece so that a direct free
+    # kick is never overridden by this qualifier.
+    if _check_individual_play(shot_row):
+        log.debug("Shot at %.0fs classified: Individual Play", shot_sec)
+        return "Individual Play"
+
+    # ── Priority 4: High Regain ──
     # Recovery in the attacking final third (x ≥ 66.67) + shot within 8s
     if _check_high_regain(poss_events, shot_sec, poss_start_sec,
                           shot_row=shot_row, match_df=match_df):
         log.debug("Shot at %.0fs classified: High Regain", shot_sec)
         return "High Regain"
 
-    # ── Priority 4: Cut Back ──
+    # ── Priority 5: Cut Back ──
     # Pull-back pass from the by-line into the box (F3 qualifier 195).
     # Checked before Cross because a by-line pass also matches wide-zone
     # cross detection; the Pull Back qualifier is the definitive signal.
@@ -253,7 +283,7 @@ def classify_attack_origin(
         log.debug("Shot at %.0fs classified: Cut Back", shot_sec)
         return "Cut Back"
 
-    # ── Priority 5: Cross ──
+    # ── Priority 6: Cross ──
     # Wide-zone final-third pass + cross qualifier or wide-zone origin.
     if _check_cross(shot_row, shot_sec, poss_events, match_df=match_df):
         log.debug("Shot at %.0fs classified: Cross", shot_sec)
@@ -267,11 +297,23 @@ def classify_attack_origin(
     return "Combination"
 
 
+def _check_individual_play(shot_row: pd.Series) -> bool:
+    """Return ``True`` if the shot was created by individual skill alone.
+
+    Opta attaches ``Individual Play = 'Si'`` directly to the shot/goal event
+    when the player created the chance without an assist — typically via a
+    dribble or solo run.  This is a first-party qualifier; no heuristic is
+    needed.
+    """
+    return _has_qualifier(shot_row, "Individual Play", "individual_play", "Individual play")
+
+
 def _is_set_piece_event(row: pd.Series) -> bool:
     """Return ``True`` if *row* is a dead-ball restart event.
 
     Checks both the event-type string and any set-piece qualifier column.
     """
+
     et = str(row.get("event_type", row.get("event", ""))).strip().lower()
     if et in SET_PIECE_EVENTS:
         return True
@@ -311,9 +353,23 @@ def _check_set_piece(
            Poss N   (team):  corner taken → cross
            Poss N+1 (opp):   aerial (won/lost)
            Poss N+2 (team):  header / shot  ← shot lives here
+
+    **Priority 0 — direct qualifier on the shot row itself:**
+    Opta attaches qualifiers such as ``Direct free``, ``Free kick taken``,
+    ``Corner taken``, and ``Penalty`` directly to the shot/goal event when
+    the ball was struck without any intervening pass from the restart.
+    When these are present we return ``True`` immediately — no time-window
+    or pass-count check is required.  This handles cases where the setup
+    delay between the foul and the shot exceeds ``SET_PIECE_LOOKBACK_SEC``
+    (e.g. VAR reviews, wall-building delays > 15 s).
     """
-    # Penalty is always Set Piece regardless of pass count
-    if _has_qualifier(shot_row, "Penalty", "penalty"):
+    # ── Priority 0: qualifier on the shot row itself ───────────────────────
+    # If Opta tagged the shot directly as a set-piece execution we trust it
+    # unconditionally — no time window or pass count required.
+    if _has_qualifier(shot_row, *_DIRECT_SP_SHOT_QUALS):
+        log.debug(
+            "Set piece (direct qualifier on shot row at %.0fs)", shot_sec
+        )
         return True
 
     lookback_start = shot_sec - SET_PIECE_LOOKBACK_SEC
@@ -858,21 +914,19 @@ def classify_shot_quality(
     xg_value: float,
     is_on_target: bool,
     is_goal_event: bool,
+    is_big_chance: bool = False,
 ) -> int:
     """
     Classify shot into quality tier (0–3).
 
-    Level 3 — Converted:    outcome == "goal"
-    Level 2 — Big Chance:   outcome == "saved" OR xG ≥ 0.20
-    Level 1 — Promising:    outcome in {"miss", "post"} AND xG ≥ 0.10
-    Level 0 — Speculative:  outcome == "blocked" OR xG < 0.10
+    Level 3 — Converted:   outcome == "goal"
+    Level 2 — Big Chance:  Opta "Big Chance" qualifier present on the shot row
+    Level 0 — Speculative: everything else
     """
     if is_goal_event:
         return 3
-    if is_on_target or xg_value >= 0.20:
+    if is_big_chance:
         return 2
-    if type_id in (13, 14) and xg_value >= 0.10:  # miss or post
-        return 1
     return 0
 
 
@@ -1026,7 +1080,15 @@ class ChanceCreationAnalyzer:
             lambda t: canonical_name(str(t).strip()).lower() == team_lower
             if pd.notna(t) else False
         )
-        team_shots = df[shot_mask & team_mask]
+        # Exclude own goals (column "own goal" == "Si" / non-null)
+        if "own goal" in df.columns:
+            og_mask = df["own goal"].apply(
+                lambda v: str(v).strip().lower() in ("si", "yes", "1", "true")
+                if pd.notna(v) else False
+            )
+        else:
+            og_mask = pd.Series(False, index=df.index)
+        team_shots = df[shot_mask & team_mask & ~og_mask]
 
         for idx in team_shots.index:
             shot_row = df.loc[idx]
@@ -1064,9 +1126,12 @@ class ChanceCreationAnalyzer:
             # Compute PV for this shot's chain
             pv_val = self._compute_shot_pv(poss_events, shot_row, poss_start_sec)
 
+            # Big Chance — Opta qualifier on the shot row
+            is_big_chance = _has_qualifier(shot_row, "Big Chance", "big_chance")
+
             # Quality tier
             quality_tier = classify_shot_quality(
-                type_id, xg_val, on_target, is_goal_event,
+                type_id, xg_val, on_target, is_goal_event, is_big_chance,
             )
 
             detail = {
@@ -1264,7 +1329,7 @@ class ChanceCreationAnalyzer:
     def _compute_quality_tiers(self, shots: List[dict]) -> dict:
         """Compute shot quality tier distribution."""
         total = max(len(shots), 1)
-        tiers = {0: 0, 1: 0, 2: 0, 3: 0}
+        tiers = {0: 0, 2: 0, 3: 0}
 
         for s in shots:
             tier = s.get("quality_tier", 0)
@@ -1278,10 +1343,6 @@ class ChanceCreationAnalyzer:
             "level_2_threat": {
                 "count": tiers[2],
                 "pct": round(tiers[2] / total * 100, 2),
-            },
-            "level_1_danger": {
-                "count": tiers[1],
-                "pct": round(tiers[1] / total * 100, 2),
             },
             "level_0_low": {
                 "count": tiers[0],
@@ -1303,7 +1364,6 @@ class ChanceCreationAnalyzer:
             "shot_quality_tiers": {
                 "level_3_converted": {"count": 0, "pct": 0.0},
                 "level_2_threat": {"count": 0, "pct": 0.0},
-                "level_1_danger": {"count": 0, "pct": 0.0},
                 "level_0_low": {"count": 0, "pct": 0.0},
             },
             "shots_detail": [],

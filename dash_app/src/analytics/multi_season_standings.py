@@ -297,6 +297,7 @@ def build_standings_figure(
     progression_df: pd.DataFrame,
     team: str,
     highlight_season: Optional[str] = None,
+    theme: str = "dark",
 ) -> go.Figure:
     """
     Build the interactive points-progression Plotly figure for a single
@@ -313,6 +314,9 @@ def build_standings_figure(
         Canonical team name — only this team is shown.
     highlight_season : str, optional
         Season label (e.g. "2025/2026") to render with a bolder line.
+    theme : str, optional
+        "dark" (default) or "light" — controls badge text colour so labels
+        remain legible on both chart backgrounds.
 
     Returns
     -------
@@ -376,12 +380,17 @@ def build_standings_figure(
     # ── Benchmark lines (median final-season cutoffs, 2021/22 – 2025/26) ──
     # UCL: 1st–4th (direct), UEL: 5th (direct), UECL: 6th (playoff)
     # Relegation: 17th place = last safe spot (median 33 pts across 5 seasons)
+    # All labels use an opaque badge annotation for readability on both themes.
     BENCHMARKS = [
         {"y": 70, "color": "#0E1E5B", "label": "UCL (Top 4) — ~70 pts"},
         {"y": 68, "color": "#F47E01", "label": "UEL (Top 5) — ~68 pts"},
         {"y": 63, "color": "#00CC44", "label": "UECL playoff (Top 6) — ~63 pts"},
         {"y": 33, "color": "#FF1A1A", "label": "Relegation zone — ~33 pts"},
     ]
+
+    is_dark = (theme != "light")
+    # Badge text is white on dark theme, near-black on light theme for contrast.
+    badge_font_color = "white" if is_dark else "#111111"
 
     max_matchday = int(progression_df["Matchday"].max()) if not progression_df.empty else 38
 
@@ -394,15 +403,21 @@ def build_standings_figure(
             y1=bm["y"],
             line=dict(color=bm["color"], width=1.8, dash="dash"),
         )
+        # Opaque badge annotation — uses the line colour as background so the
+        # label is always readable regardless of the chart background.
         fig.add_annotation(
             x=1,
             y=bm["y"],
-            text=bm["label"],
+            text=f"<b>{bm['label']}</b>",
             showarrow=False,
             xanchor="left",
             yanchor="bottom",
-            font=dict(size=10, color=bm["color"]),
-            bgcolor="rgba(27,40,56,0.0)",
+            font=dict(size=10, color=badge_font_color),
+            bgcolor=bm["color"],
+            bordercolor="rgba(255,255,255,0.25)" if is_dark else "rgba(0,0,0,0.20)",
+            borderwidth=1,
+            borderpad=3,
+            opacity=0.92,
         )
 
     fig.update_layout(

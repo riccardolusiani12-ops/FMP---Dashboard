@@ -27,23 +27,23 @@ CORRIDOR_LABELS = {
 }
 
 METHOD_COLORS = {
-    "high_regain":         "#f59e0b",   # amber-gold
     "transition_recovery": "#22c55e",   # green
     "through_ball":        "#f43f5e",   # rose
     "switch_of_play":      "#14b8a6",   # teal
     "set_piece":           "#6366f1",   # indigo
     "long_ball":           "#f97316",   # orange
+    "cross_delivery":      "#ec4899",   # pink — distinct from orange and amber
     "individual_carry":    "#eab308",   # amber
     "short_pass":          "#3b82f6",   # blue
 }
 
 METHOD_LABELS = {
-    "high_regain":         "High Regain",
     "transition_recovery": "Transition / Recovery",
     "through_ball":        "Through Ball",
     "switch_of_play":      "Switch of Play",
     "set_piece":           "Set-Piece",
     "long_ball":           "Long Ball",
+    "cross_delivery":      "Cross Delivery",
     "individual_carry":    "Individual Carry",
     "short_pass":          "Short Pass",
 }
@@ -205,9 +205,8 @@ def ft_entry_scatter_method(entries: list[dict]) -> go.Figure:
 
     # Group by method (preserve priority display order)
     METHOD_ORDER = [
-        "high_regain",
         "transition_recovery", "through_ball", "switch_of_play", "set_piece",
-        "long_ball", "individual_carry", "short_pass",
+        "long_ball", "cross_delivery", "individual_carry", "short_pass",
     ]
 
     grouped: dict[str, list[tuple[float, float, str]]] = {k: [] for k in METHOD_ORDER}

@@ -391,22 +391,22 @@ def _build_transition_pitch(origins: list[dict], offside_line_x: float | None = 
     fig = go.Figure()
     _draw_full_pitch(fig)
 
-    # Shaded orange: middle + attacking third (x = 33.33 → 100)
+    # Shaded orange: own attacking half + attacking third (x = 50 → 100)
     fig.add_shape(
-        type="rect", x0=33.33, x1=100, y0=0, y1=100,
+        type="rect", x0=50.0, x1=100, y0=0, y1=100,
         fillcolor="rgba(249,115,22,0.08)",
         line=dict(color="rgba(0,0,0,0)", width=0),
         layer="below",
     )
 
-    # Detection threshold line at x = 33.33
+    # Detection threshold line at x = 50 (attacking half boundary)
     fig.add_shape(
-        type="line", x0=33.33, x1=33.33, y0=0, y1=100,
+        type="line", x0=50.0, x1=50.0, y0=0, y1=100,
         line=dict(color="rgba(255,255,255,0.45)", width=1.5, dash="dash"),
     )
     fig.add_annotation(
-        x=33.33, y=103,
-        text="Detection threshold x=33.33",
+        x=50.0, y=103,
+        text="Ball loss threshold x=50",
         showarrow=False,
         font=dict(size=9, color="rgba(255,255,255,0.45)"),
         xanchor="center",
@@ -711,7 +711,7 @@ def defensive_structure_card(data: dict) -> html.Div:
     return html.Div(
         [
             # ── Card header ────────────────────────────────────────────────────
-            html.H5("Transitions and Offside Trap", className="buildup-card-title"),
+            html.H5("Defensive Transition", className="buildup-card-title"),
 
             # ── Defensive Transitions ─────────────────────────────────────────
             _subsection_title("Defensive Transitions"),
@@ -764,32 +764,6 @@ def defensive_structure_card(data: dict) -> html.Div:
                 style={"marginBottom": "1.5rem"},
             ),
 
-            _hr(),
-
-            # ── Offside Trap ───────────────────────────────────────────────
-            _subsection_title("Offside Trap"),
-
-            html.Div(
-                [
-                    html.Div(
-                        [
-                            _mini_kpi(
-                                "Offsides Provoked",
-                                data.get("offsides_provoked", 0),
-                                "total offside traps triggered",
-                                OFFSIDE_COLOR, "bi-flag-fill",
-                            ),
-                            _mini_kpi(
-                                "Offside Line (median)",
-                                _safe_float(data.get("offside_line_median")),
-                                "median x-position of offside line",
-                                OFFSIDE_COLOR, "bi-rulers",
-                            ),
-                        ],
-                        className="team-kpi-row",
-                    ),
-                ],
-            ),
         ],
         className="buildup-card",
         style={"padding": "1.5rem"},

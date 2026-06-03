@@ -19,27 +19,30 @@ import plotly.graph_objects as go
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ORIGIN_LABELS = [
-    "Set Piece", "High Regain", "Cross", "Through Ball", "Cut Back", "Combination",
+    "Set Piece", "High Regain", "Cross", "Through Ball", "Cut Back",
+    "Individual Play", "Combination",
 ]
 MATRIX_ROWS = ["N", "xG", "SoT%", "GS"]
 
 ORIGIN_COLORS = {
-    "Set Piece":    "#22c55e",   # green
-    "High Regain":  "#ef4444",   # red — aggressive pressing recovery
-    "Cross":        "#06b6d4",   # cyan
-    "Through Ball": "#8b5cf6",   # purple
-    "Cut Back":     "#f97316",   # orange
-    "Combination":  "#3b82f6",   # blue — patient build-up
-    "TOTAL":        "#8a1f33",   # primary
+    "Set Piece":       "#22c55e",   # green
+    "High Regain":     "#ef4444",   # red — aggressive pressing recovery
+    "Cross":           "#06b6d4",   # cyan
+    "Through Ball":    "#8b5cf6",   # purple
+    "Cut Back":        "#f97316",   # orange
+    "Individual Play": "#eab308",   # yellow — solo dribble / no assist
+    "Combination":     "#3b82f6",   # blue — patient build-up
+    "TOTAL":           "#8a1f33",   # primary
 }
 
 ORIGIN_ICONS = {
-    "Set Piece":    "bi-flag-fill",
-    "High Regain":  "bi-shield-fill-exclamation",
-    "Cross":        "bi-arrow-up-right",
-    "Through Ball": "bi-chevron-double-up",
-    "Cut Back":     "bi-arrow-return-left",
-    "Combination":  "bi-shuffle",
+    "Set Piece":       "bi-flag-fill",
+    "High Regain":     "bi-shield-fill-exclamation",
+    "Cross":           "bi-arrow-up-right",
+    "Through Ball":    "bi-chevron-double-up",
+    "Cut Back":        "bi-arrow-return-left",
+    "Individual Play": "bi-person-fill-up",
+    "Combination":     "bi-shuffle",
 }
 
 TIER_META = {
@@ -53,19 +56,13 @@ TIER_META = {
         "label": "Big Chance",
         "color": "#f97316",
         "icon": "bi-exclamation-triangle-fill",
-        "desc": "On target · xG ≥ 0.20",
-    },
-    "level_1_danger": {
-        "label": "Promising",
-        "color": "#eab308",
-        "icon": "bi-exclamation-circle",
-        "desc": "xG ≥ 0.10 · miss or post",
+        "desc": "Opta Big Chance qualifier",
     },
     "level_0_low": {
         "label": "Speculative",
         "color": "#6b7280",
         "icon": "bi-dash-circle",
-        "desc": "Blocked or xG < 0.10",
+        "desc": "No Big Chance qualifier",
     },
 }
 
@@ -420,8 +417,7 @@ def _section_shot_quality(tiers: dict, shots_detail: list) -> html.Div:
     total = max(len(shots_detail), 1)
 
     # Donut chart
-    tier_keys = ["level_3_converted", "level_2_threat",
-                 "level_1_danger", "level_0_low"]
+    tier_keys = ["level_3_converted", "level_2_threat", "level_0_low"]
     labels = []
     values = []
     colors = []

@@ -29,6 +29,7 @@ from dash import html, dcc
 import plotly.graph_objects as go
 
 from src.analytics.chance_creation import ORIGIN_LABELS
+from src.components.chance_creation_cards import TIER_META
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
@@ -38,22 +39,24 @@ PRIMARY = "#8a1f33"
 
 # Re-use the same origin colours/icons as chance_creation (consistent UX)
 ORIGIN_COLORS: dict[str, str] = {
-    "Set Piece":    "#22c55e",
-    "High Regain":  "#ef4444",
-    "Cross":        "#06b6d4",
-    "Through Ball": "#8b5cf6",
-    "Cut Back":     "#f97316",
-    "Combination":  "#3b82f6",
-    "TOTAL":        "#8a1f33",
+    "Set Piece":       "#22c55e",
+    "High Regain":     "#ef4444",
+    "Cross":           "#06b6d4",
+    "Through Ball":    "#8b5cf6",
+    "Cut Back":        "#f97316",
+    "Individual Play": "#eab308",
+    "Combination":     "#3b82f6",
+    "TOTAL":           "#8a1f33",
 }
 
 ORIGIN_ICONS: dict[str, str] = {
-    "Set Piece":    "bi-flag-fill",
-    "High Regain":  "bi-shield-fill-exclamation",
-    "Cross":        "bi-arrow-up-right",
-    "Through Ball": "bi-chevron-double-up",
-    "Cut Back":     "bi-arrow-return-left",
-    "Combination":  "bi-shuffle",
+    "Set Piece":       "bi-flag-fill",
+    "High Regain":     "bi-shield-fill-exclamation",
+    "Cross":           "bi-arrow-up-right",
+    "Through Ball":    "bi-chevron-double-up",
+    "Cut Back":        "bi-arrow-return-left",
+    "Individual Play": "bi-person-fill-up",
+    "Combination":     "bi-shuffle",
 }
 
 # Matrix row display config — GC replaces GS (Goals Scored → Goals Conceded)
@@ -513,6 +516,82 @@ def _draw_defensive_half(fig: go.Figure) -> None:
         fig.add_shape(**s)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# E. SHOT QUALITY TIERS (CONCEDED)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _section_shot_quality(tiers: dict, shots_detail: list) -> html.Div:
+    """Shot quality tier distribution for chances conceded — donut chart + KPI cards."""
+    total = max(len(shots_detail), 1)
+
+    tier_keys = ["level_3_converted", "level_2_threat", "level_0_low"]
+    labels, values, colors = [], [], []
+    for tk in tier_keys:
+        meta = TIER_META[tk]
+        t = tiers.get(tk, {})
+        labels.append(meta["label"])
+        values.append(t.get("count", 0))
+        colors.append(meta["color"])
+
+    donut_fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.55,
+        marker=dict(colors=colors, line=dict(color="rgba(0,0,0,0.3)", width=1)),
+        textinfo="label+percent",
+        textfont=dict(size=11, color="#e2e8f0"),
+        hovertemplate="%{label}: %{value} shots (%{percent})<extra></extra>",
+        sort=False,
+    )])
+    donut_fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=10, t=10, b=10), height=220,
+        showlegend=False,
+        annotations=[dict(
+            text=f"<b>{total}</b><br><span style='font-size:10px'>shots</span>",
+            x=0.5, y=0.5, font_size=18, font_color="#e2e8f0",
+            showarrow=False,
+        )],
+    )
+
+    cards = []
+    for tk in tier_keys:
+        meta = TIER_META[tk]
+        t = tiers.get(tk, {})
+        cards.append(
+            _mini_kpi(
+                meta["label"], t.get("count", 0),
+                f"{t.get('pct', 0)}% · {meta['desc']}",
+                meta["color"], meta["icon"],
+            )
+        )
+
+    return html.Div(
+        [
+            html.H6("Shot Quality Tiers Conceded", className="buildup-subsection-title"),
+            html.Div(
+                [
+                    html.Div(
+                        dcc.Graph(figure=donut_fig, config={"displayModeBar": False}),
+                        style={"flex": "0 0 240px", "minWidth": "200px"},
+                    ),
+                    html.Div(
+                        cards,
+                        className="team-kpi-row",
+                        style={"flex": "1", "minWidth": "0"},
+                    ),
+                ],
+                style={"display": "flex", "gap": "1.5rem",
+                       "alignItems": "center", "flexWrap": "wrap"},
+            ),
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# F. SHOT MAP (defensive half)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def _section_shot_map(shots_detail: list) -> html.Div:
     """Scatter plot of shots conceded on the defensive half of the pitch.
 
@@ -767,11 +846,15 @@ def chance_conceded_card(data: dict) -> html.Div:
         _section_origin_grid(shots),
         sep,
 
-        # E — Shot map (defensive half)
+        # E — Shot quality tiers
+        _section_shot_quality(data.get("shot_quality_tiers", {}), shots),
+        sep,
+
+        # F — Shot map (defensive half)
         _section_shot_map(shots),
         sep,
 
-        # F — Chain-to-Concede matrix
+        # G — Chain-to-Concede matrix
         _section_chain_to_concede_matrix(matrix),
     ]
 

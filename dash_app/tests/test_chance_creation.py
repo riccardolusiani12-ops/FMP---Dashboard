@@ -857,20 +857,27 @@ class TestShotQualityTiers:
     def test_goal_is_level_3(self):
         assert classify_shot_quality(16, 0.05, True, True) == 3
 
-    def test_saved_is_level_2(self):
-        assert classify_shot_quality(15, 0.10, True, False) == 2
+    def test_big_chance_qualifier_is_level_2(self):
+        """Opta Big Chance qualifier on shot → level 2 regardless of outcome."""
+        assert classify_shot_quality(15, 0.10, True, False, is_big_chance=True) == 2
 
-    def test_high_xg_miss_is_level_2(self):
-        assert classify_shot_quality(13, 0.25, False, False) == 2
+    def test_big_chance_on_miss_is_level_2(self):
+        """Big Chance miss is still level 2."""
+        assert classify_shot_quality(13, 0.05, False, False, is_big_chance=True) == 2
 
-    def test_moderate_xg_miss_is_level_1(self):
-        assert classify_shot_quality(13, 0.15, False, False) == 1
+    def test_saved_without_qualifier_is_level_0(self):
+        """On-target shot with no Big Chance qualifier → Speculative (level 0)."""
+        assert classify_shot_quality(15, 0.35, True, False, is_big_chance=False) == 0
+
+    def test_high_xg_without_qualifier_is_level_0(self):
+        """High xG alone does not elevate to level 2 — qualifier required."""
+        assert classify_shot_quality(13, 0.50, False, False, is_big_chance=False) == 0
 
     def test_low_xg_miss_is_level_0(self):
         assert classify_shot_quality(13, 0.05, False, False) == 0
 
     def test_blocked_is_level_0(self):
-        """Blocked shot (type_id not in 13,14) with low xG → level 0."""
+        """Blocked shot with no qualifier → level 0."""
         assert classify_shot_quality(12, 0.05, False, False) == 0
 
 

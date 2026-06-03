@@ -51,9 +51,10 @@ def register_team_detail_callbacks(app):
         Output("standings-chart", "figure"),
         Input("team-context", "data"),
         Input("team-season-selector", "value"),
+        Input("theme-store", "data"),
         prevent_initial_call=False,
     )
-    def update_chart(context: dict, selected_season: str):
+    def update_chart(context: dict, selected_season: str, theme: str):
         """Build the points progression chart for the selected team."""
         team = context.get("team", "")
 
@@ -65,6 +66,7 @@ def register_team_detail_callbacks(app):
             progression,
             team=team,
             highlight_season=highlight,
+            theme=theme or "dark",
         )
         return fig
 

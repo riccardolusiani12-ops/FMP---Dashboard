@@ -10,14 +10,14 @@ Definitions:
   (Opta y=0 right touchline, y=100 left touchline — high y = Left)
 
 Entry methods (priority order):
-1. through_ball      — Through ball qualifier (F3 #4)
-2. switch_of_play    — Switch of play qualifier (F3 #196)
-3. cross             — Cross qualifier (F3 #2) — ball from wide into box
-4. set_piece         — Possession from set-piece + entry within 12s
-5. long_ball         — Long ball qualifier (F3 #1) OR Length >= 32
-6. transition_recovery — Recovery/interception possession + entry within 8s
-7. individual_carry  — Player dribbles/carries across FT line
-8. short_pass        — Default (patient build-up, incl. combination play patterns)
+1. transition_recovery — Ball recovery/interception/tackle in own half, FT within 15 s
+2. through_ball        — Through ball qualifier (F3 #4), last 3 passes in chain
+3. switch_of_play      — Switch of play qualifier (F3 #196), last 3 passes in chain
+4. set_piece           — Possession from set-piece + entry within 12s
+5a. cross_delivery     — Cross qualifier (F3 #2) — beats distance threshold
+5b. long_ball          — Long ball qualifier (F3 #1) OR Length >= 32
+6. individual_carry    — Player dribbles/carries across FT line
+7. short_pass          — Default (patient build-up, incl. combination play patterns)
 
 Outcome thresholds (binary — no neutral):
 - Positive: >=5s retention OR shot attempt OR foul vs team OR corner/throw-in
@@ -92,12 +92,12 @@ RIGHT_Y_MAX: float = 33.33
 
 # Entry method keys (priority order)
 METHOD_KEYS = [
-    "high_regain",          # special: ball won back already inside the FT
     "transition_recovery",
     "through_ball",
     "switch_of_play",
     "set_piece",
     "long_ball",
+    "cross_delivery",
     "individual_carry",
     "short_pass",
 ]
@@ -572,8 +572,6 @@ def detect_high_regain_ft_entries(
             poss_origin, et, full_iloc,
             x,   # poss_start_x == entry x (starts inside FT)
         )
-        # Method is fixed — bypass _classify_ft_method entirely
-        entry["method"] = "high_regain"
         entries.append(entry)
 
     return entries
@@ -588,67 +586,49 @@ def _classify_ft_method(entry: dict) -> str:
     Classify how the ball entered the Final Third.
 
     Priority order (first match wins):
-    1. transition_recovery — Ball recovered in own 1st third (poss_start_x <= 33.33)
-                             AND FT reached within RECOVERY_ENTRY_SEC (8 s).
-                             Wins regardless of how the ball was progressed
-                             (long ball, short passes, carry, etc.).
-    2. through_ball        — F3 #4 Through ball qualifier
-    3. switch_of_play      — F3 #196 Switch of play qualifier
+    1. transition_recovery — Defensive recovery action (ball recovery / interception /
+                             tackle) starts the possession in own half (poss_start_x
+                             <= 50.0) AND FT is reached within 15 s.
+    2. through_ball        — F3 #4 qualifier on the entry event OR any of the last
+                             3 passes in the chain (covers continuation passes after
+                             the through ball).
+    3. switch_of_play      — F3 #196 qualifier on the entry event OR any of the last
+                             3 passes in the chain.
     4. set_piece           — Set-piece restart played directly into the FT:
                              passes_before_count == 0 (the restart itself crosses
                              the FT line — no intermediate passes in own half).
-    5. long_ball           — F3 #1 Long ball qualifier OR Length >= 32
-                             OR F3 #2 cross qualifier (a cross from outside the FT
-                             is effectively a long/direct ball into the FT).
+    5a. cross_delivery     — F3 #2 cross qualifier on the entry event OR detail[-1].
+                             Evaluated before distance so a long cross stays "cross".
+    5b. long_ball          — F3 #1 Long ball qualifier OR Length >= 32 on entry or
+                             detail[-1] (distance-only check, 1-pass window).
     6. individual_carry    — Same player carries/dribbles across FT line
     7. short_pass          — Default (patient build-up, incl. one-two patterns)
     """
     detail = entry["passes_before_detail"]
 
-    # 0. High Regain — ball recovered already inside the FT (set at detection time)
-    if entry.get("entry_type") == "high_regain":
-        return "high_regain"
-
-    # 1. Transition / recovery — ball won back in OWN HALF, FT reached within 25 s
-    #    Aligned with the defensive-transition definition in defensive_structure.py:
-    #      - poss_start_x ≤ 50.0  : possession starts in team's own half
-    #        (was 33.33 — own defensive third — which was too strict; a recovery
-    #         at x=33.5 or a mid-block win at x=45 are equally transitional)
-    #      - elapsed_sec ≤ 25.0   : matches TRANSITION_WINDOW_SEC used in the
-    #        defensive phase to confirm a counter-attack is underway
+    # 1. Transition / recovery — defensive action in own half, FT reached within 15 s
     if (entry["poss_origin_event"] in ("ball recovery", "interception", "tackle")
             and entry.get("poss_start_x", 100.0) <= 50.0
-            and entry["elapsed_sec"] <= 25.0):
+            and entry["elapsed_sec"] <= 15.0):
         return "transition_recovery"
 
-    # 1b. Fast-break from deep own half — applies even when poss_origin_event
-    #     is not a recovery event.  This captures cases where:
-    #       • the possession engine fragmented a single counter-attack into
-    #         multiple possession IDs (e.g. a 1-event opponent touch between
-    #         the ball recovery and the main build-up), so the carrying
-    #         possession starts with a pass instead of a recovery, yet the ball
-    #         is clearly in a counter-attack pattern (starts deep, reaches FT fast).
-    #       • poss_start_x ≤ 33.33 : deep in own defensive third
-    #       • elapsed_sec  ≤ 8.0   : reaches FT within 8 s (fast-break pace)
-    if (entry.get("poss_start_x", 100.0) <= 33.33
-            and entry["elapsed_sec"] <= 8.0):
-        return "transition_recovery"
-
-    # 2. Through ball qualifier on the entry pass (F3 #4)
+    # 2. Through ball — entry event first, then last 3 passes in the chain (F3 #4)
     if entry["through_ball_flag"]:
         return "through_ball"
-    if detail:
-        last_p = detail[-1]
-        if last_p.get("through_ball", "") in ("si", "yes", "1", "true"):
-            return "through_ball"
+    if detail and any(
+        p.get("through_ball", "") in ("si", "yes", "1", "true")
+        for p in detail[-3:]
+    ):
+        return "through_ball"
 
-    # 3. Switch of play qualifier (F3 #196)
+    # 3. Switch of play — entry event first, then last 3 passes in the chain (F3 #196)
     if entry["switch_of_play_flag"]:
         return "switch_of_play"
-    if detail:
-        last_p = detail[-1]
-        if last_p.get("switch_of_play", "") in ("si", "yes", "1", "true"):
-            return "switch_of_play"
+    if detail and any(
+        p.get("switch_of_play", "") in ("si", "yes", "1", "true")
+        for p in detail[-3:]
+    ):
+        return "switch_of_play"
 
     # 4. Set-piece origin — ONLY when played directly into the FT
     #    (passes_before_count == 0: the restart pass itself is the entry).
@@ -657,17 +637,20 @@ def _classify_ft_method(entry: dict) -> str:
             and entry["passes_before_count"] == 0):
         return "set_piece"
 
-    # 5. Long ball qualifier, distance >= LONG_PASS_DISTANCE, OR cross qualifier
-    #    A cross from outside the FT is a direct/aerial ball into the FT.
-    if entry["long_ball_flag"] or entry.get("cross_flag"):
+    # 5a. Cross delivery — cross qualifier beats distance threshold (F3 #2)
+    if entry.get("cross_flag") or (
+        detail and detail[-1].get("cross", "") in ("si", "yes", "1", "true")
+    ):
+        return "cross_delivery"
+
+    # 5b. Long ball — qualifier or distance >= threshold (1-pass window only)
+    if entry["long_ball_flag"]:
         return "long_ball"
     if entry["entry_length"] is not None and entry["entry_length"] >= LONG_PASS_DISTANCE:
         return "long_ball"
     if detail:
         last_p = detail[-1]
         if last_p.get("long_ball", "") in ("si", "yes", "1", "true"):
-            return "long_ball"
-        if last_p.get("cross", "") in ("si", "yes", "1", "true"):
             return "long_ball"
         lp_len = last_p.get("length")
         if lp_len is not None and pd.notna(lp_len) and float(lp_len) >= LONG_PASS_DISTANCE:
@@ -932,7 +915,87 @@ def count_box_touches(team_df: pd.DataFrame, team_lower: str = "") -> int:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 6. AGGREGATE METRICS
+# 6. TEMPO ANALYSIS (Passes Per Minute)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_tempo_metrics(team_df: pd.DataFrame, team_lower: str, qualifying_poss_ids: set) -> dict:
+    """
+    Calculate tempo metrics from qualifying possessions only (≥10 seconds).
+    Overall passes per minute and by 15-minute windows.
+
+    Parameters
+    ----------
+    team_df : DataFrame
+        Team's events (filtered by poss_id, poss_team_name, etc.)
+    team_lower : str
+        Lower-cased team name (for consistency)
+    qualifying_poss_ids : set
+        Set of possession IDs that meet the qualifying threshold (≥10 seconds)
+
+    Returns dict with:
+        passes_per_minute  — passes per minute in qualifying possessions
+        total_passes       — total passes in qualifying possessions
+        qualifying_poss_duration_sec — total duration of all qualifying possessions
+        tempo_windows      — list of dicts with (start_min, end_min, passes, ppm)
+    """
+    qual_team_df = team_df[team_df["poss_id"].isin(qualifying_poss_ids)].copy()
+    passes_df = qual_team_df[
+        qual_team_df["event_type"].str.strip().str.lower() == "pass"
+    ].copy()
+
+    if passes_df.empty:
+        return {
+            "passes_per_minute": 0.0,
+            "total_passes": 0,
+            "qualifying_poss_duration_sec": 0,
+            "tempo_windows": [],
+        }
+
+    total_passes = len(passes_df)
+    min_sec = passes_df["_match_sec"].min()
+    max_sec = passes_df["_match_sec"].max()
+    qual_duration_sec = max_sec - min_sec
+    qual_duration_min = qual_duration_sec / 60.0 if qual_duration_sec > 0 else 1.0
+
+    passes_per_minute = round(total_passes / qual_duration_min, 2)
+
+    tempo_windows = []
+    window_size_sec = 15 * 60
+    window_start = 0
+
+    while window_start < qual_duration_sec:
+        window_end = window_start + window_size_sec
+        window_passes = len(
+            passes_df[
+                (passes_df["_match_sec"] >= min_sec + window_start)
+                & (passes_df["_match_sec"] < min_sec + window_end)
+            ]
+        )
+        window_duration_min = min(window_size_sec, qual_duration_sec - window_start) / 60.0
+        window_ppm = round(window_passes / window_duration_min, 2) if window_duration_min > 0 else 0.0
+
+        start_min = window_start // 60
+        end_min = (window_end // 60) - 1
+
+        tempo_windows.append({
+            "start_min": int(start_min),
+            "end_min": int(end_min),
+            "passes": int(window_passes),
+            "ppm": window_ppm,
+        })
+
+        window_start += window_size_sec
+
+    return {
+        "passes_per_minute": passes_per_minute,
+        "total_passes": int(total_passes),
+        "qualifying_poss_duration_sec": int(qual_duration_sec),
+        "tempo_windows": tempo_windows,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 7. AGGREGATE METRICS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def compute_ft_metrics(entries: list[dict], poss_stats: dict, box_touches: int = 0, all_ft_entries: int = 0) -> dict:
@@ -1134,10 +1197,9 @@ def analyse_final_third(
     entries = detect_ft_entries(qual_team_df, df, team_lower)
     entries += detect_high_regain_ft_entries(qual_team_df, df)
 
-    # 5. Classify entry method (high_regain entries already pre-classified)
+    # 5. Classify entry method for all entries
     for entry in entries:
-        if entry.get("method") != "high_regain":
-            entry["method"] = _classify_ft_method(entry)
+        entry["method"] = _classify_ft_method(entry)
 
     # 6. Classify outcome (uses full df for look-ahead)
     for entry in entries:
@@ -1154,6 +1216,10 @@ def analyse_final_third(
     # 8. Aggregate metrics
     metrics = compute_ft_metrics(entries, poss_stats, box_touches=bt,
                                  all_ft_entries=all_ft_entries_count)
+
+    # 8b. Tempo analysis (qualifying possessions only)
+    tempo_metrics = compute_tempo_metrics(team_df, team_lower, poss_stats["qualifying_poss_ids"])
+    metrics.update(tempo_metrics)
 
     # 9. Debug trace
     debug: list[dict] = []

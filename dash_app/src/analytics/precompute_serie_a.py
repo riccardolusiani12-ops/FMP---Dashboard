@@ -180,6 +180,9 @@ def precompute_season(season: str) -> dict[str, pd.DataFrame]:
         results["xg"] = xg_summary
     print(f"  xG computed in {time.time()-t0:.1f}s")
 
+    # ── 9. Offensive Phase (GK / FT / Chance Creation event tables) ──
+    precompute_season_offensive(season)
+
     return results
 
 
@@ -253,6 +256,261 @@ def build_league_summary() -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def precompute_season_offensive(season: str) -> None:
+    """
+    Precompute season-level offensive phase tables for ALL teams in a season.
+
+    Iterates every match CSV, runs the three offensive analytics modules
+    (GK build-up, final-third entries, chance creation) and saves four
+    Parquet files to data/ready/:
+
+        gk_events_{season}.parquet        — one row per GK possession event
+        ft_entries_{season}.parquet       — one row per FT entry event
+        shots_{season}.parquet            — one row per shot / chance event
+        offensive_summary_{season}.parquet — one row per team with all KPI
+                                            aggregates (totals, rates, per-match)
+
+    These replace the expensive CSV-scanning in the callbacks: the callbacks
+    read and filter the ready Parquets instead.
+
+    Bottleneck profile (2025/2026, Juventus):
+        GK buildup  ~0.5s/match × 38 = ~19s
+        FT entries  ~1.0s/match × 38 = ~40s  ← possession chain is the cost
+        Chance crtn ~0.2s/match × 38 = ~8s
+    Running once at precompute time eliminates this cost at callback time.
+    """
+    from src.analytics.goalkeeper_buildup import analyse_goalkeeper_buildup
+    from src.analytics.final_third import analyse_final_third
+    from src.analytics.chance_creation import analyse_chance_creation, get_pv_model
+    from src.utils.paths import list_match_files, parse_match_filename
+
+    season_label = season.replace("_", "/")
+    print(f"\n  — Offensive Phase precompute: {season_label}")
+    t0 = time.time()
+
+    # Load PV model once; pass it into every chance_creation call
+    pv_model = get_pv_model()
+
+    files = list_match_files(season)
+    if not files:
+        print(f"  ⚠ No match files found for {season_label}")
+        return
+
+    gk_rows:   list[dict] = []
+    ft_rows:   list[dict] = []
+    shot_rows: list[dict] = []
+    # Per-match KPIs collected for averaging into the summary
+    # {team: {"possession_pct": [float,...], "box_touches": [int,...], "passes_per_minute": [float,...]}}
+    ft_match_kpis: dict[str, dict] = {}
+
+    for f in files:
+        info = parse_match_filename(f)
+        home = canonical_name(info["home"])
+        away = canonical_name(info["away"])
+        gw   = info.get("week", "?")
+
+        for team in (home, away):
+            # ── GK build-up ──────────────────────────────────────────────
+            try:
+                gk = analyse_goalkeeper_buildup(f, team)
+                for ev in gk.get("events", []):
+                    gk_rows.append({
+                        "season":    season_label,
+                        "team":      team,
+                        "gw":        gw,
+                        "home":      home,
+                        "away":      away,
+                        "minute":    ev.get("minute", 0),
+                        "pass_type": ev.get("pass_type", "short"),
+                        "outcome":   ev.get("outcome", "negative"),
+                        "granular":  ev.get("granular_outcome", "N1"),
+                        "recv_zone": ev.get("recv_zone", 0),
+                        "recv_x":    ev.get("recv_x"),
+                        "recv_y":    ev.get("recv_y"),
+                        "gk_x":      ev.get("gk_x"),
+                        "gk_y":      ev.get("gk_y"),
+                    })
+            except Exception as exc:
+                print(f"    ⚠ GK {team} {f.name}: {exc}")
+
+            # ── Final third entries ───────────────────────────────────────
+            try:
+                ft = analyse_final_third(f, team)
+                for ev in ft.get("entries", []):
+                    ft_rows.append({
+                        "season":      season_label,
+                        "team":        team,
+                        "gw":          gw,
+                        "home":        home,
+                        "away":        away,
+                        "method":      ev.get("method", "short_pass"),
+                        "outcome":     ev.get("outcome", "negative"),
+                        "corridor":    ev.get("corridor", "C"),
+                        "entry_x":     ev.get("entry_x"),
+                        "entry_y":     ev.get("entry_y"),
+                        "minute":      ev.get("minute", 0),
+                        "player":      ev.get("player", ""),
+                        "elapsed_sec": ev.get("elapsed_sec", 0.0),
+                        "passes_before": ev.get("passes_before_count", 0),
+                    })
+                # Collect per-match KPIs for averaging
+                m = ft.get("metrics", {})
+                if team not in ft_match_kpis:
+                    ft_match_kpis[team] = {"possession_pct": [], "box_touches": [], "passes_per_minute": []}
+                pct = m.get("possession_pct", 0.0)
+                bt  = m.get("box_touches", 0)
+                ppm = m.get("passes_per_minute", 0.0)
+                ft_match_kpis[team]["possession_pct"].append(float(pct))
+                ft_match_kpis[team]["box_touches"].append(int(bt))
+                ft_match_kpis[team]["passes_per_minute"].append(float(ppm))
+            except Exception as exc:
+                print(f"    ⚠ FT {team} {f.name}: {exc}")
+
+            # ── Chance creation ───────────────────────────────────────────
+            try:
+                cc = analyse_chance_creation(f, team, pv_model=pv_model)
+                for sh in cc.get("shots_detail", []):
+                    shot_rows.append({
+                        "season":        season_label,
+                        "team":          team,
+                        "gw":            gw,
+                        "home":          home,
+                        "away":          away,
+                        "origin":        sh.get("origin", "Combination"),
+                        "x":             sh.get("x", 0.0),
+                        "y":             sh.get("y", 50.0),
+                        "xG":            sh.get("xG", 0.0),
+                        "on_target":     bool(sh.get("on_target", False)),
+                        "is_goal":       bool(sh.get("is_goal", False)),
+                        "in_box":        bool(sh.get("in_box", False)),
+                        "quality_tier":  int(sh.get("quality_tier", 0)),
+                        "minute":        sh.get("minute", 0),
+                        "player":        sh.get("player", ""),
+                    })
+            except Exception as exc:
+                print(f"    ⚠ CC {team} {f.name}: {exc}")
+
+    # ── Save event-level parquets ─────────────────────────────────────────────
+    if gk_rows:
+        _save_parquet(
+            pd.DataFrame(gk_rows),
+            READY_DATA_DIR / f"gk_events_{season}.parquet",
+            "GK build-up events",
+        )
+    if ft_rows:
+        _save_parquet(
+            pd.DataFrame(ft_rows),
+            READY_DATA_DIR / f"ft_entries_{season}.parquet",
+            "FT entry events",
+        )
+    if shot_rows:
+        _save_parquet(
+            pd.DataFrame(shot_rows),
+            READY_DATA_DIR / f"shots_{season}.parquet",
+            "Shot / chance events",
+        )
+
+    # ── Build per-team summary (offensive_summary_{season}.parquet) ──────────
+    all_teams = sorted({r["team"] for r in gk_rows + ft_rows + shot_rows})
+    # Number of matches each team played (home or away appearances)
+    match_counts: dict[str, int] = {}
+    for f in files:
+        info = parse_match_filename(f)
+        for team in (canonical_name(info["home"]), canonical_name(info["away"])):
+            match_counts[team] = match_counts.get(team, 0) + 1
+
+    summary_rows: list[dict] = []
+    for team in all_teams:
+        mp = max(match_counts.get(team, 1), 1)
+
+        # GK
+        tgk = [r for r in gk_rows if r["team"] == team]
+        gk_total   = len(tgk)
+        gk_short   = sum(1 for r in tgk if r["pass_type"] == "short")
+        gk_long    = gk_total - gk_short
+        gk_pos     = sum(1 for r in tgk if r["outcome"] == "positive")
+        short_evts = [r for r in tgk if r["pass_type"] == "short"]
+        long_evts  = [r for r in tgk if r["pass_type"] == "long"]
+        gk_short_pos = sum(1 for r in short_evts if r["outcome"] == "positive")
+        gk_long_pos  = sum(1 for r in long_evts  if r["outcome"] == "positive")
+
+        # FT
+        tft = [r for r in ft_rows if r["team"] == team]
+        ft_total = len(tft)
+        ft_pos   = sum(1 for r in tft if r["outcome"] == "positive")
+        from collections import Counter
+        ft_methods   = Counter(r["method"]   for r in tft)
+        ft_corridors = Counter(r["corridor"] for r in tft)
+        top_ft_method = ft_methods.most_common(1)[0][0] if ft_methods else "short_pass"
+
+        # Shots
+        tsh = [r for r in shot_rows if r["team"] == team]
+        sh_total  = len(tsh)
+        sh_goals  = sum(1 for r in tsh if r["is_goal"])
+        sh_target = sum(1 for r in tsh if r["on_target"])
+        xg_total  = sum(r["xG"] for r in tsh)
+        sh_origins = Counter(r["origin"] for r in tsh)
+        top_origin = sh_origins.most_common(1)[0][0] if sh_origins else "Combination"
+
+        safe_gk = max(gk_total, 1)
+        safe_ft = max(ft_total, 1)
+        safe_sh = max(sh_total, 1)
+
+        # Per-match FT KPI averages
+        kpis = ft_match_kpis.get(team, {})
+        pct_vals = kpis.get("possession_pct", [])
+        bt_vals  = kpis.get("box_touches", [])
+        ppm_vals = kpis.get("passes_per_minute", [])
+        avg_possession_pct    = round(sum(pct_vals) / len(pct_vals), 1) if pct_vals else 0.0
+        avg_box_touches       = round(sum(bt_vals)  / len(bt_vals),  1) if bt_vals  else 0.0
+        avg_passes_per_minute = round(sum(ppm_vals) / len(ppm_vals), 2) if ppm_vals else 0.0
+
+        summary_rows.append({
+            "season":                season_label,
+            "team":                  team,
+            "matches_played":        mp,
+            # GK
+            "gk_total":              gk_total,
+            "gk_short_count":        gk_short,
+            "gk_long_count":         gk_long,
+            "gk_short_pct":          round(gk_short / safe_gk * 100, 1),
+            "gk_long_pct":           round(gk_long  / safe_gk * 100, 1),
+            "gk_positive_pct":       round(gk_pos   / safe_gk * 100, 1),
+            "gk_short_success_rate": round(gk_short_pos / max(len(short_evts), 1) * 100, 1),
+            "gk_long_success_rate":  round(gk_long_pos  / max(len(long_evts),  1) * 100, 1),
+            "gk_avg_per_match":      round(gk_total / mp, 1),
+            # FT
+            "ft_total":              ft_total,
+            "ft_per_match":          round(ft_total / mp, 1),
+            "ft_success_rate":       round(ft_pos / safe_ft * 100, 1),
+            "ft_top_method":         top_ft_method,
+            "ft_left_pct":           round(ft_corridors.get("L", 0) / safe_ft * 100, 1),
+            "ft_centre_pct":         round(ft_corridors.get("C", 0) / safe_ft * 100, 1),
+            "ft_right_pct":          round(ft_corridors.get("R", 0) / safe_ft * 100, 1),
+            "ft_possession_pct":     avg_possession_pct,
+            "ft_box_touches_per_match": avg_box_touches,
+            "ft_passes_per_minute":  avg_passes_per_minute,
+            # Shots / xG
+            "shots_total":           sh_total,
+            "shots_per_match":       round(sh_total / mp, 1),
+            "goals":                 sh_goals,
+            "on_target":             sh_target,
+            "sot_pct":               round(sh_target / safe_sh * 100, 1),
+            "xg_total":              round(xg_total, 2),
+            "xg_per_match":          round(xg_total / mp, 2),
+            "top_origin":            top_origin,
+        })
+
+    if summary_rows:
+        _save_parquet(
+            pd.DataFrame(summary_rows),
+            READY_DATA_DIR / f"offensive_summary_{season}.parquet",
+            "Offensive phase summary",
+        )
+
+    print(f"  ✓ Offensive Phase precompute done in {time.time()-t0:.1f}s")
+
 
 def precompute_all(seasons: list[str] | None = None) -> None:
     """

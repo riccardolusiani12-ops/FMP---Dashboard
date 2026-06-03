@@ -169,19 +169,21 @@ def analyse_chance_conceded(
         "pct_out_box":    sm_raw.get("pct_out_box", 0.0),
     }
 
-    # ── Add convenience aggregates from shots ─────────────────────────────
+    # ── Add convenience aggregates from shots ─────────────────────────────────────
     goals_conceded   = sum(1 for s in shots if s.get("is_goal"))
     xg_against_total = sum(s.get("xG", 0.0) for s in shots)
-    big_chances      = sum(
-        1 for s in shots
-        if s.get("xG", 0.0) >= 0.20 and s.get("on_target")
-    )
+    # Big chances: use the quality_tier flag (set from Opta Big Chance qualifier)
+    big_chances      = sum(1 for s in shots if s.get("quality_tier") == 2)
+
+    # ── Pass shot quality tiers through (rename GS→GC key not needed here) ───
+    shot_quality_tiers = opp_data.get("shot_quality_tiers", {})
 
     return {
         # Core data
         "chain_to_concede_matrix": matrix,
         "shot_metrics":            shot_metrics,
         "shots_detail":            shots,
+        "shot_quality_tiers":      shot_quality_tiers,
         # Convenience aggregates
         "goals_conceded":          goals_conceded,
         "xg_against":              round(xg_against_total, 2),
@@ -211,6 +213,11 @@ def _empty_result() -> dict[str, Any]:
             "shot_freq_pct": 0.0,
             "pct_in_box": 0.0,
             "pct_out_box": 0.0,
+        },
+        "shot_quality_tiers": {
+            "level_3_converted": {"count": 0, "pct": 0.0},
+            "level_2_threat":    {"count": 0, "pct": 0.0},
+            "level_0_low":       {"count": 0, "pct": 0.0},
         },
         "shots_detail":         [],
         "goals_conceded":       0,

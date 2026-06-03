@@ -32,19 +32,6 @@ def layout() -> html.Div:
                         className="back-button",
                     ),
                     html.H2("Match Analysis", className="page-title"),
-                    html.Div(
-                        [
-                            html.Label("Season", className="filter-label"),
-                            dcc.Dropdown(
-                                id="ma-season-selector",
-                                options=season_opts,
-                                value=default_season,
-                                clearable=False,
-                                className="season-dropdown",
-                            ),
-                        ],
-                        className="season-filter",
-                    ),
                 ],
                 className="page-header",
             ),
@@ -54,12 +41,33 @@ def layout() -> html.Div:
             dcc.Store(id="ma-selected-match", data=None),
             dcc.Store(id="ma-active-module", data=None),
 
+            # Download sink for the Match Report PDF
+            dcc.Download(id="ma-match-report-download"),
+
             # Teams grid — same as Team Overview
             html.Div(
                 [
-                    html.P(
-                        "Select a team to view their matches.",
-                        className="page-subtitle",
+                    html.Div(
+                        [
+                            html.P(
+                                "Select a team to view their matches.",
+                                className="page-subtitle",
+                            ),
+                            html.Div(
+                                [
+                                    html.Label("Season", className="filter-label"),
+                                    dcc.Dropdown(
+                                        id="ma-season-selector",
+                                        options=season_opts,
+                                        value=default_season,
+                                        clearable=False,
+                                        className="season-dropdown",
+                                    ),
+                                ],
+                                className="season-filter",
+                            ),
+                        ],
+                        className="team-selection-header",
                     ),
                     dcc.Loading(
                         html.Div(id="ma-teams-grid", className="teams-grid"),

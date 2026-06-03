@@ -82,13 +82,24 @@ def _offensive_phase(match_csv: Path, team: str) -> html.Div:
     ])
 
 
+def _set_pieces_phase(match_csv: Path, team: str) -> html.Div:
+    from src.analytics.corner_kicks import analyse_corner_kicks
+    from src.analytics.free_kicks import analyse_free_kicks
+    from src.components.set_piece_cards import corner_kicks_card, free_kicks_card
+
+    return html.Div([
+        _safe_render(corner_kicks_card, analyse_corner_kicks(match_csv, team)),
+        html.Div(style={"height": "2rem"}),
+        _safe_render(free_kicks_card, analyse_free_kicks(match_csv, team)),
+    ])
+
+
 def _defensive_phase(match_csv: Path, team: str) -> html.Div:
     from src.analytics.defensive_pressing import analyse_defensive_pressing
     from src.analytics.defensive_structure import analyse_defensive_structure
     from src.analytics.defensive_castle import analyse_defensive_castle
     from src.analytics.chance_conceded import analyse_chance_conceded
     from src.components.defensive_pressing_cards import defensive_pressing_card
-    from src.components.defensive_structure_cards import defensive_structure_card
     from src.components.defensive_castle_cards import defensive_castle_card
     from src.components.chance_conceded_cards import chance_conceded_card
 
@@ -97,22 +108,45 @@ def _defensive_phase(match_csv: Path, team: str) -> html.Div:
     d3_data = analyse_defensive_castle(match_csv, team)
     d4_data = analyse_chance_conceded(match_csv, team)
 
-    # Pass D1 pressing_line_median into D2 data so the offside line chart
-    # can overlay both reference lines without re-computing D1 metrics.
-    d2_data["pressing_line_median"] = d1_data.get("pressing_line_median")
-
-    # Pass offside line median into D1 data so the pressing pitch map can
-    # overlay it as a purple dotted line alongside the pressing line.
-    d1_data["offside_line_median"] = d2_data.get("offside_line_median")
+    # Inject offside trap data into pressing card so it can show
+    # Offsides Provoked / Offside Line in the Overview and pitch maps.
+    for key in (
+        "offside_line_median",
+        "offsides_provoked",
+        "offside_clustering_index",
+        "offside_corridor_distribution",
+        "offside_height_zone_distribution",
+    ):
+        d1_data[key] = d2_data.get(key)
 
     return html.Div([
         _safe_render(defensive_pressing_card, d1_data),
         html.Div(style={"height": "2rem"}),
-        _safe_render(defensive_structure_card, d2_data),
-        html.Div(style={"height": "2rem"}),
         _safe_render(defensive_castle_card, d3_data),
         html.Div(style={"height": "2rem"}),
         _safe_render(chance_conceded_card, d4_data),
+    ])
+
+
+def _transitions_phase(match_csv: Path, team: str) -> html.Div:
+    from src.analytics.defensive_pressing import analyse_defensive_pressing
+    from src.analytics.defensive_structure import analyse_defensive_structure
+    from src.analytics.offensive_transitions import analyse_offensive_transitions
+    from src.components.defensive_structure_cards import defensive_structure_card
+    from src.components.offensive_transition_cards import offensive_transition_card
+
+    d1_data  = analyse_defensive_pressing(match_csv, team)
+    d2_data  = analyse_defensive_structure(match_csv, team)
+    off_data = analyse_offensive_transitions(match_csv, team)
+
+    # Inject pressing line so the offside pitch map can overlay both lines.
+    d2_data["pressing_line_median"] = d1_data.get("pressing_line_median")
+    d1_data["offside_line_median"]  = d2_data.get("offside_line_median")
+
+    return html.Div([
+        _safe_render(offensive_transition_card, off_data),
+        html.Div(style={"height": "2rem"}),
+        _safe_render(defensive_structure_card, d2_data),
     ])
 
 
@@ -250,6 +284,29 @@ def _module_card_active(icon: str, title: str, desc: str,
     )
 
 
+def _module_card_download(icon: str, title: str, desc: str,
+                          module_id: str, prefix: str) -> html.Div:
+    """Active card whose click triggers a download instead of opening a view."""
+    return html.Div(
+        [
+            html.Div(html.I(className=f"bi {icon}"), className="module-icon"),
+            html.Div(title,  className="module-title"),
+            html.Div(desc,   className="module-desc"),
+            html.Div(
+                [
+                    html.I(className="bi bi-download me-2"),
+                    html.Span("Download PDF"),
+                ],
+                className="module-footer",
+                style={"color": "var(--primary-light)"},
+            ),
+        ],
+        className="module-card module-card-active",
+        id={"type": f"{prefix}-module-card", "index": module_id},
+        n_clicks=0,
+    )
+
+
 def _module_card_soon(icon: str, title: str, desc: str) -> html.Div:
     return html.Div(
         [
@@ -303,15 +360,26 @@ def _module_selector(match_label: str, prefix: str) -> html.Div:
                         "defensive",
                         prefix,
                     ),
-                    _module_card_soon(
+                    _module_card_active(
+                        "bi-arrow-left-right",
+                        "Transitions",
+                        "Defensive transitions, offside trap and offensive transition analysis.",
+                        "transitions",
+                        prefix,
+                    ),
+                    _module_card_active(
                         "bi-flag-fill",
                         "Set Pieces",
                         "Corner kicks, free kicks and throw-in analysis.",
+                        "set_pieces",
+                        prefix,
                     ),
-                    _module_card_soon(
+                    _module_card_download(
                         "bi-file-earmark-pdf-fill",
-                        "Match Report PDF",
-                        "Export a full post-match report as a downloadable PDF.",
+                        "Match Report",
+                        "Download a PDF summary — metadata, formations, lineups & bench.",
+                        "match_report",
+                        prefix,
                     ),
                 ],
                 className="modules-grid",
@@ -335,6 +403,20 @@ def _analysis_view(match_csv: Path, team: str, match_label: str,
         icon_cls     = "bi bi-lightning-charge-fill"
         content      = dcc.Loading(
             _offensive_phase(match_csv, perspective),
+            type="circle", color="#8a1f33",
+        )
+    elif module == "set_pieces":
+        module_title = "Set Pieces"
+        icon_cls     = "bi bi-flag-fill"
+        content      = dcc.Loading(
+            _set_pieces_phase(match_csv, perspective),
+            type="circle", color="#8a1f33",
+        )
+    elif module == "transitions":
+        module_title = "Transitions"
+        icon_cls     = "bi bi-arrow-left-right"
+        content      = dcc.Loading(
+            _transitions_phase(match_csv, perspective),
             type="circle", color="#8a1f33",
         )
     else:
