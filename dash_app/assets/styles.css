@@ -359,6 +359,10 @@ body.light-theme {
     color: #1a1a2e;
 }
 
+.light-theme .formation-lineup-panel {
+    border-top-color: rgba(0, 0, 0, 0.1);
+}
+
 /* Build-up card — hardcoded dark bg override */
 .light-theme .buildup-card {
     background: linear-gradient(160deg, #ffffff 0%, #f7f8fa 100%);
@@ -1124,6 +1128,191 @@ body {
 .formations-empty {
     text-align: center;
     padding: 2rem;
+}
+
+/* ── Formation card — clickable state ───────────────────────────────────────── */
+.formation-card-clickable {
+    cursor: pointer;
+    position: relative;
+}
+
+.formation-view-lineup-btn {
+    margin-top: 0.8rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--primary-light);
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.formation-card-clickable:hover .formation-view-lineup-btn {
+    opacity: 1;
+}
+
+/* ── Formation Lineup Panel (flp) ───────────────────────────────────────────── */
+.formation-lineup-panel {
+    margin-top: 1.5rem;
+    border-top: 1px solid var(--border-light);
+    padding-top: 1.2rem;
+    animation: fadeSlideIn 0.2s ease;
+}
+
+@keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.flp-panel-inner {
+    width: 100%;
+}
+
+.flp-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.flp-panel-header-left {
+    display: flex;
+    align-items: center;
+    color: var(--text-primary);
+}
+
+.flp-panel-title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.flp-panel-hint {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    opacity: 0.7;
+}
+
+.flp-cards-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+/* Primary player (most starts in that slot) */
+.flp-player-card {
+    background: rgba(15, 25, 35, 0.5);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    min-width: 160px;
+    flex: 0 1 180px;
+    transition: var(--transition);
+}
+
+.flp-player-card--primary {
+    border-color: var(--border-subtle);
+}
+
+.flp-player-card--depth {
+    opacity: 0.65;
+    border-style: dashed;
+}
+
+.flp-player-card:hover {
+    opacity: 1;
+    border-color: var(--primary-light);
+    transform: translateY(-1px);
+}
+
+.flp-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.flp-jersey {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    min-width: 2rem;
+}
+
+.flp-pos-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #fff;
+}
+
+.flp-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.flp-stats-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.flp-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.flp-stat-label {
+    font-size: 0.6rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 500;
+}
+
+.flp-stat-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Light theme overrides */
+.light-theme .flp-player-card {
+    background: linear-gradient(160deg, #ffffff 0%, #f7f8fa 100%);
+    border-color: rgba(0, 0, 0, 0.08);
+}
+
+.light-theme .flp-player-card--primary {
+    border-color: rgba(138, 31, 51, 0.2);
+}
+
+.light-theme .flp-name,
+.light-theme .flp-stat-value {
+    color: #1a1a2e;
+}
+
+.light-theme .flp-stat-label,
+.light-theme .flp-jersey {
+    color: #4a5568;
+}
+
+.light-theme .flp-panel-title {
+    color: #1a1a2e;
 }
 
 /* ── Goals & xG Section ─────────────────────────────────────────────────────── */

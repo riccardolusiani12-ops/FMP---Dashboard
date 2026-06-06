@@ -4,9 +4,10 @@ Formation Analytics Module
 Analyses match-event CSVs to extract team formations (starting + in-match changes).
 
 Provides:
-  - extract_team_formations()       → per-match formation list for a team
-  - compute_formation_counts()      → aggregated formation usage for a season
-  - build_formation_pitch_figure()  → Plotly pitch visualisation of a formation
+  - extract_team_formations()          → per-match formation list for a team
+  - compute_formation_counts()         → aggregated formation usage for a season
+  - extract_formation_lineup_stats()   → per-slot player stats for a specific formation
+  - build_formation_pitch_figure()     → Plotly pitch visualisation of a formation
 
 Data source: Opta match-event CSVs under data/raw/serie_a_*/events/
 Formation data columns:
@@ -342,7 +343,309 @@ def compute_formation_counts(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — PLOTLY PITCH FIGURE
+# STEP 2 — FORMATION LINEUP STATS (per-slot player aggregates)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Opta Player Position codes
+_POS_LABEL = {1: "GK", 2: "DEF", 3: "MID", 4: "FWD"}
+
+
+def _parse_qualifiers(qual_str: str) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for part in str(qual_str).split(";"):
+        part = part.strip()
+        if ":" in part:
+            key, val = part.split(":", 1)
+            result[key.strip()] = [x.strip() for x in val.strip().split(",")]
+    return result
+
+
+def extract_formation_lineup_stats(
+    season: str,
+    team: str,
+    formation_str: str,
+) -> pd.DataFrame:
+    """
+    For every match in which *team* started in *formation_str*, collect per-player
+    stats aggregated across the full season.
+
+    Only players who started (formation slot 1–11) in that formation are included.
+    When multiple players shared the same slot across different matches the top
+    contributor per slot (most starts) is the primary entry; all are returned so
+    the caller can show depth.
+
+    Returns
+    -------
+    pd.DataFrame with columns:
+        slot, player_id, name, jersey, pos_code, pos_label,
+        starts, total_mins, avg_mins_per_start
+    Sorted by slot asc, starts desc.
+    """
+    # Convert "3-5-2" → 352 for matching against the numeric formation column
+    try:
+        form_code = int(formation_str.replace("-", ""))
+    except ValueError:
+        return pd.DataFrame()
+
+    events_dir = RAW_DATA_DIR / f"serie_a_{season}" / "events"
+    if not events_dir.exists():
+        return pd.DataFrame()
+
+    csv_files = sorted(events_dir.glob("*.csv"))
+
+    # Accumulate: player_id → aggregate dict
+    from collections import defaultdict
+    agg: dict[str, dict] = defaultdict(lambda: {
+        "name": "?", "jersey": "?", "pos_code": 0, "slot": 0,
+        "starts": 0, "total_mins": 0,
+    })
+
+    for fp in csv_files:
+        try:
+            df = pd.read_csv(fp, low_memory=False)
+        except Exception:
+            continue
+
+        # Resolve team name
+        team_names_in_match = df["team_name"].dropna().unique()
+        canonical_map = {canonical_name(n): n for n in team_names_in_match}
+        if team not in canonical_map:
+            continue
+        opta_name = canonical_map[team]
+
+        # Check starting formation
+        setup_rows = df[(df["type_id"] == 34) & (df["team_name"] == opta_name)]
+        if setup_rows.empty:
+            continue
+        setup_row = setup_rows.iloc[0]
+        match_form = setup_row.get("formation", None)
+        if pd.isna(match_form) or int(match_form) != form_code:
+            continue
+
+        # Build player_id → name from regular events
+        player_map = (
+            df[["player_id", "player_name"]]
+            .dropna()
+            .drop_duplicates()
+            .set_index("player_id")["player_name"]
+            .to_dict()
+        )
+
+        # Match total minutes
+        p2_end = df[(df["type_id"] == 30) & (df["period_id"] == 2)]["time_min"].max()
+        total_match_mins = int(p2_end) if pd.notna(p2_end) else 90
+
+        quals = _parse_qualifiers(setup_row["represented_qualifiers"])
+        involved = quals.get("Involved", [])
+        jerseys = quals.get("Jersey Number", [])
+        pos_codes = quals.get("Player Position", [])
+        slots = quals.get("Team Player Formation", [])
+
+        subs_off = df[(df["type_id"] == 18) & (df["team_name"] == opta_name)]
+
+        for pid, jn, pos, slot_str in zip(involved, jerseys, pos_codes, slots):
+            try:
+                slot = int(slot_str)
+            except ValueError:
+                continue
+            if slot == 0:
+                continue  # bench player in this match
+
+            # Minutes: started at 0, subbed off at minute_out
+            sub_off_row = subs_off[subs_off["player_id"] == pid]
+            minute_out = (
+                int(sub_off_row.iloc[0]["time_min"])
+                if not sub_off_row.empty
+                else total_match_mins
+            )
+
+            entry = agg[pid]
+            entry["name"] = player_map.get(pid, entry["name"])
+            entry["jersey"] = jn
+            try:
+                entry["pos_code"] = int(pos)
+            except (ValueError, TypeError):
+                pass
+            entry["slot"] = slot
+            entry["starts"] += 1
+            entry["total_mins"] += minute_out
+
+    if not agg:
+        return pd.DataFrame()
+
+    rows = []
+    for pid, d in agg.items():
+        rows.append({
+            "slot": d["slot"],
+            "player_id": pid,
+            "name": d["name"],
+            "jersey": d["jersey"],
+            "pos_code": d["pos_code"],
+            "pos_label": _POS_LABEL.get(d["pos_code"], ""),
+            "starts": d["starts"],
+            "total_mins": d["total_mins"],
+            "avg_mins_per_start": round(d["total_mins"] / d["starts"], 1) if d["starts"] else 0,
+        })
+
+    result = (
+        pd.DataFrame(rows)
+        .sort_values(["slot", "starts"], ascending=[True, False])
+        .reset_index(drop=True)
+    )
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 3 — PLAYER-TO-DOT ASSIGNMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _hungarian_assign(cost: np.ndarray) -> np.ndarray:
+    """
+    Solve the linear assignment problem (minimise total cost).
+    Returns an array `assignment` where assignment[i] = j means player i
+    is assigned to dot j.  Pure numpy — no scipy dependency.
+    Uses the O(n³) Kuhn-Munkres algorithm.
+    """
+    n = cost.shape[0]
+    INF = 1e18
+    u = np.zeros(n + 1)
+    v = np.zeros(n + 1)
+    p = np.zeros(n + 1, dtype=int)   # p[j] = row (player) assigned to col j
+    way = np.zeros(n + 1, dtype=int)
+
+    for i in range(1, n + 1):
+        p[0] = i
+        j0 = 0
+        minv = np.full(n + 1, INF)
+        used = np.zeros(n + 1, dtype=bool)
+        while True:
+            used[j0] = True
+            i0, delta, j1 = p[j0], INF, -1
+            for j in range(1, n + 1):
+                if not used[j]:
+                    cur = cost[i0 - 1, j - 1] - u[i0] - v[j]
+                    if cur < minv[j]:
+                        minv[j] = cur
+                        way[j] = j0
+                    if minv[j] < delta:
+                        delta = minv[j]
+                        j1 = j
+            for j in range(n + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+            j0 = j1
+            if p[j0] == 0:
+                break
+        while j0:
+            p[j0] = p[way[j0]]
+            j0 = way[j0]
+
+    # p[j] = player (1-indexed) assigned to col j (1-indexed dot)
+    assignment = np.zeros(n, dtype=int)
+    for j in range(1, n + 1):
+        if p[j] > 0:
+            assignment[p[j] - 1] = j - 1   # player → dot index (0-based)
+    return assignment
+
+
+def assign_players_to_dots(
+    formation_str: str,
+    lineup_df: "pd.DataFrame",
+    positions_df: "pd.DataFrame",
+) -> list[dict]:
+    """
+    Assign the top player per slot to the closest template dot using the
+    Hungarian (optimal linear assignment) algorithm.
+
+    Template dot positions are FIXED — dots never move.  Only the hover label
+    on each dot changes to reflect the best-matching player.
+
+    Rules applied before the cost matrix is built:
+    - GK (pos_code == 1) is always assigned to dot index 0 (the GK dot at x=5).
+    - All other players are matched to the remaining 10 outfield dots.
+    - Cost metric: squared Euclidean distance between the player's season-median
+      (x, y) and the dot's template (x, y).
+
+    Parameters
+    ----------
+    formation_str : str
+    lineup_df : DataFrame with columns slot, player_id, name, jersey, pos_code,
+                pos_label, starts, total_mins, avg_mins_per_start.
+                One row per (slot, player) — top player per slot is used.
+    positions_df : DataFrame with columns player_id, median_x, median_y.
+
+    Returns
+    -------
+    List of 11 dicts (one per template dot, index 0 = GK dot), each with:
+        player_id, name, jersey, pos_label, pos_code, starts, total_mins,
+        avg_mins_per_start
+    A dict will be empty ({}) for dots where no player could be matched.
+    """
+    template = _get_positions(formation_str)   # 11 (x, y) pairs
+
+    # Build player lookup maps from lineup (top player per slot)
+    top = lineup_df.drop_duplicates("slot")
+    pid_to_pos = positions_df.set_index("player_id")[["median_x", "median_y"]].to_dict("index")
+
+    # Separate GK(s) from outfield players
+    gk_rows    = top[top["pos_code"] == 1]
+    field_rows = top[top["pos_code"] != 1]
+
+    # ── Assign GK to dot 0 ────────────────────────────────────────────────────
+    result: list[dict] = [{} for _ in range(11)]
+
+    if not gk_rows.empty:
+        gk = gk_rows.iloc[0]
+        result[0] = gk.to_dict()
+
+    # ── Build cost matrix for outfield players vs outfield dots ───────────────
+    outfield_dots = template[1:]          # 10 dots
+    field_list = field_rows.to_dict("records")
+
+    # We need exactly 10 players for 10 dots.
+    # If fewer players have position data, fill missing with template positions.
+    n_dots = len(outfield_dots)
+    n_players = len(field_list)
+
+    if n_players == 0:
+        return result
+
+    # Pad with dummy rows if fewer than 10 real players (edge cases / data gaps)
+    padded = field_list + [None] * (n_dots - n_players)
+
+    cost = np.zeros((n_dots, n_dots))
+    LARGE = 1e9  # cost for a dummy/unpositioned player — assigned last
+
+    for i, player in enumerate(padded):
+        if player is None:
+            cost[i, :] = LARGE
+            continue
+        pid = player["player_id"]
+        xy = pid_to_pos.get(pid)
+        if xy is None:
+            # No position data — large cost so this player is assigned to a
+            # leftover dot and won't displace a positioned player
+            cost[i, :] = LARGE
+        else:
+            px, py = xy["median_x"], xy["median_y"]
+            for j, (dx, dy) in enumerate(outfield_dots):
+                cost[i, j] = (px - dx) ** 2 + (py - dy) ** 2
+
+    assignment = _hungarian_assign(cost)   # player i → dot index assignment[i]
+
+    for i, player in enumerate(padded):
+        dot_idx = assignment[i] + 1        # +1 because dot 0 is GK
+        if player is not None and cost[i, assignment[i]] < LARGE:
+            result[dot_idx] = player
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 4 — PLOTLY PITCH FIGURE
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Visual palette
@@ -359,28 +662,62 @@ def build_formation_pitch_figure(
     formation_str: str,
     count: int = 0,
     pct: float = 0.0,
+    lineup_df: "pd.DataFrame | None" = None,
+    positions_df: "pd.DataFrame | None" = None,
 ) -> go.Figure:
     """
     Build a Plotly figure showing a formation on a simplified football pitch.
 
-    Key design decisions for reliable rendering in Dash:
-      • ALL shapes use layer="below" so traces are always visible
-      • No scaleanchor / scaleratio — avoids plot-area collapse in flex containers
-      • Explicit width + height for predictable sizing
-      • Simple scatter traces with high-contrast colours
+    Dot positions are always fixed to the formation template — they never move.
+    When lineup_df + positions_df are provided, each dot is labelled with the
+    player whose season-average position is closest to that dot, using the
+    optimal Hungarian assignment.  GK is always assigned to the GK dot.
 
     Parameters
     ----------
-    formation_str : str   e.g. '4-3-3'
-    count : int           usage count (unused in figure itself)
-    pct : float           usage percentage (unused in figure itself)
-
-    Returns
-    -------
-    go.Figure
+    formation_str : str
+    count, pct    : unused, kept for API compatibility
+    lineup_df     : per-slot player stats (columns: slot, player_id, name,
+                    jersey, pos_code, pos_label, starts, total_mins,
+                    avg_mins_per_start).
+    positions_df  : player season-average positions (columns: player_id,
+                    median_x, median_y, n_events).
     """
-    positions = _get_positions(formation_str)
-    BELOW = "below"                       # constant for every shape
+    template_positions = _get_positions(formation_str)   # always 11 fixed dots
+    BELOW = "below"
+
+    # ── Resolve per-dot player label via Hungarian assignment ─────────────────
+    # dot_players[i] is the player dict assigned to template dot i (0-based).
+    # Empty dict means no data for that dot.
+    dot_players: list[dict] = [{} for _ in range(11)]
+
+    if (
+        lineup_df is not None and not lineup_df.empty
+        and positions_df is not None and not positions_df.empty
+    ):
+        dot_players = assign_players_to_dots(formation_str, lineup_df, positions_df)
+    elif lineup_df is not None and not lineup_df.empty:
+        # No position data — fall back to slot-order assignment (dot i → slot i+1)
+        top = lineup_df.drop_duplicates("slot").sort_values("slot")
+        for i, (_, row) in enumerate(top.iterrows()):
+            if i < 11:
+                dot_players[i] = row.to_dict()
+
+    def _hover_text(dot_idx: int) -> str:
+        d = dot_players[dot_idx]
+        if not d:
+            return "<extra></extra>"
+        return (
+            f"<b>#{d.get('jersey','?')}  {d.get('name','')}</b><br>"
+            f"<span style='color:#aaa'>{d.get('pos_label','')}</span><br>"
+            f"──────────────<br>"
+            f"Starts:  <b>{int(d.get('starts', 0))}</b><br>"
+            f"Minutes: <b>{int(d.get('total_mins', 0))}</b><br>"
+            f"Avg min: <b>{float(d.get('avg_mins_per_start', 0.0)):.1f}</b>"
+            "<extra></extra>"
+        )
+
+    has_hover = any(dot_players)
 
     fig = go.Figure()
 
@@ -390,22 +727,18 @@ def build_formation_pitch_figure(
     fig.add_shape(type="rect", x0=0, y0=0, x1=100, y1=100,
                   line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
                   fillcolor=_PITCH_BG, layer=BELOW)
-
     # Centre line
     fig.add_shape(type="line", x0=50, y0=0, x1=50, y1=100,
                   line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
                   layer=BELOW)
-
     # Centre circle
     fig.add_shape(type="circle", x0=42, y0=42, x1=58, y1=58,
                   line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
                   layer=BELOW)
-
     # Centre spot
     fig.add_shape(type="circle", x0=49.3, y0=49.3, x1=50.7, y1=50.7,
                   fillcolor=_LINE_COLOR, line=dict(width=0),
                   layer=BELOW)
-
     # Penalty areas
     fig.add_shape(type="rect", x0=0, y0=22, x1=16.5, y1=78,
                   line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
@@ -413,7 +746,6 @@ def build_formation_pitch_figure(
     fig.add_shape(type="rect", x0=83.5, y0=22, x1=100, y1=78,
                   line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
                   layer=BELOW)
-
     # 6-yard boxes
     fig.add_shape(type="rect", x0=0, y0=36, x1=5.5, y1=64,
                   line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
@@ -421,7 +753,6 @@ def build_formation_pitch_figure(
     fig.add_shape(type="rect", x0=94.5, y0=36, x1=100, y1=64,
                   line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
                   layer=BELOW)
-
     # Penalty spots
     fig.add_shape(type="circle", x0=11.2, y0=49.3, x1=12.4, y1=50.7,
                   fillcolor=_LINE_COLOR, line=dict(width=0),
@@ -429,22 +760,19 @@ def build_formation_pitch_figure(
     fig.add_shape(type="circle", x0=87.6, y0=49.3, x1=88.8, y1=50.7,
                   fillcolor=_LINE_COLOR, line=dict(width=0),
                   layer=BELOW)
-
     # Goal mouths
     fig.add_shape(type="rect", x0=-2.5, y0=44, x1=0, y1=56,
                   line=dict(color="rgba(255,255,255,0.20)", width=1.5),
-                  fillcolor="rgba(255,255,255,0.04)",
-                  layer=BELOW)
+                  fillcolor="rgba(255,255,255,0.04)", layer=BELOW)
     fig.add_shape(type="rect", x0=100, y0=44, x1=102.5, y1=56,
                   line=dict(color="rgba(255,255,255,0.20)", width=1.5),
-                  fillcolor="rgba(255,255,255,0.04)",
-                  layer=BELOW)
+                  fillcolor="rgba(255,255,255,0.04)", layer=BELOW)
 
-    # ── Player markers ────────────────────────────────────────
-    gk_pos = positions[0]
-    outfield = positions[1:]
+    # ── Player markers — fixed template dots, hover label from assignment ──────
+    gk_pos   = template_positions[0]
+    outfield = template_positions[1:]
 
-    # Glow layers (soft halo behind each dot)
+    # Glow batch traces (no hover — performance)
     fig.add_trace(go.Scatter(
         x=[gk_pos[0]], y=[gk_pos[1]],
         mode="markers",
@@ -459,33 +787,29 @@ def build_formation_pitch_figure(
         showlegend=False, hoverinfo="skip",
     ))
 
-    # Main dots — GK (green) and outfield (red)
-    fig.add_trace(go.Scatter(
-        x=[gk_pos[0]], y=[gk_pos[1]],
-        mode="markers",
-        marker=dict(
-            size=14, color=_DOT_GK,
-            line=dict(width=2, color="rgba(255,255,255,0.8)"),
-        ),
-        showlegend=False, hoverinfo="skip",
-    ))
-    fig.add_trace(go.Scatter(
-        x=[p[0] for p in outfield],
-        y=[p[1] for p in outfield],
-        mode="markers",
-        marker=dict(
-            size=13, color=_DOT_RED,
-            line=dict(width=2, color="rgba(255,255,255,0.8)"),
-        ),
-        showlegend=False, hoverinfo="skip",
-    ))
+    # Individual dot traces — one per dot so each gets its own hovertemplate
+    # dot index 0 = GK dot, dots 1-10 = outfield
+    for dot_idx, (x, y) in enumerate(template_positions):
+        is_gk = dot_idx == 0
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y],
+            mode="markers",
+            marker=dict(
+                size=14 if is_gk else 13,
+                color=_DOT_GK if is_gk else _DOT_RED,
+                line=dict(width=2, color="rgba(255,255,255,0.8)"),
+            ),
+            showlegend=False,
+            hovertemplate=_hover_text(dot_idx) if has_hover else None,
+            hoverinfo="skip" if not has_hover else None,
+        ))
 
     # ── Layout ────────────────────────────────────────────────
     # Square figure (300×300) with zero margins so the 110×110 data range
     # maps to equal pixels on both axes.  The pitch rect (0→100) then has
     # exactly 13.6 px of symmetrical padding on every side.
     # paper_bgcolor == plot_bgcolor == pitch-shape fill → seamless dark rect.
-    fig.update_layout(
+    layout_kwargs: dict = dict(
         template="plotly_dark",
         paper_bgcolor=_PITCH_BG,
         plot_bgcolor=_PITCH_BG,
@@ -508,4 +832,14 @@ def build_formation_pitch_figure(
         dragmode=False,
     )
 
+    if has_hover:
+        layout_kwargs["hoverlabel"] = dict(
+            bgcolor="#0d1b2a",
+            bordercolor="rgba(255,255,255,0.15)",
+            font=dict(family="Inter, system-ui, sans-serif", size=12, color="#e8eaf0"),
+            align="left",
+        )
+        layout_kwargs["hovermode"] = "closest"
+
+    fig.update_layout(**layout_kwargs)
     return fig

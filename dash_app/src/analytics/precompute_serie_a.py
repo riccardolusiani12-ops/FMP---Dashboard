@@ -50,7 +50,7 @@ from src.analytics.multi_season_standings import (
 from src.analytics.ppda import (
     build_ppda_table,
 )
-from src.analytics.formations import extract_team_formations, formation_display
+from src.analytics.formations import extract_team_formations, formation_display, _parse_qualifiers
 from src.analytics.xg import compute_team_xg_summary
 from src.team_mapping import canonical_name
 
@@ -180,7 +180,10 @@ def precompute_season(season: str) -> dict[str, pd.DataFrame]:
         results["xg"] = xg_summary
     print(f"  xG computed in {time.time()-t0:.1f}s")
 
-    # ── 9. Offensive Phase (GK / FT / Chance Creation event tables) ──
+    # ── 9. Formation lineups (per-slot player stats) ─────────────────
+    precompute_formation_lineups(season)
+
+    # ── 10. Offensive Phase (GK / FT / Chance Creation event tables) ──
     precompute_season_offensive(season)
 
     return results
@@ -510,6 +513,131 @@ def precompute_season_offensive(season: str) -> None:
         )
 
     print(f"  ✓ Offensive Phase precompute done in {time.time()-t0:.1f}s")
+
+
+def precompute_formation_lineups(season: str) -> None:
+    """
+    Single-pass over all match CSVs for a season: emit per-player stats for
+    every (team, formation) starting combination and save as a Parquet table.
+
+    Output: data/ready/formation_lineups_{season}.parquet
+    Columns: team, formation_str, slot, player_id, name, jersey,
+             pos_code, pos_label, starts, total_mins, avg_mins_per_start
+    """
+    from collections import defaultdict
+
+    _POS_LABEL = {1: "GK", 2: "DEF", 3: "MID", 4: "FWD"}
+
+    events_dir = RAW_DATA_DIR / f"serie_a_{season}" / "events"
+    if not events_dir.exists():
+        print(f"  ⚠ No events dir for {season} — skipping formation lineups")
+        return
+
+    USECOLS = [
+        "type_id", "team_name", "player_id", "player_name",
+        "formation", "time_min", "period_id", "represented_qualifiers",
+    ]
+    csv_files = sorted(events_dir.glob("*.csv"))
+    t0 = time.time()
+    print(f"  — Formation lineups precompute: {season.replace('_','/')} ({len(csv_files)} files)")
+
+    # (canonical_team, formation_str) → {player_id → stats dict}
+    all_agg: dict[tuple[str, str], dict] = defaultdict(
+        lambda: defaultdict(lambda: {
+            "name": "?", "jersey": "?", "pos_code": 0, "slot": 0,
+            "starts": 0, "total_mins": 0,
+        })
+    )
+
+    for fp in csv_files:
+        try:
+            df = pd.read_csv(fp, low_memory=False, usecols=USECOLS)
+        except Exception:
+            continue
+
+        player_map = (
+            df[["player_id", "player_name"]].dropna()
+            .drop_duplicates().set_index("player_id")["player_name"].to_dict()
+        )
+        p2_end = df[(df["type_id"] == 30) & (df["period_id"] == 2)]["time_min"].max()
+        total_match_mins = int(p2_end) if pd.notna(p2_end) else 90
+
+        for _, setup_row in df[df["type_id"] == 34].iterrows():
+            team_opta = setup_row["team_name"]
+            form_code = setup_row.get("formation", None)
+            if pd.isna(form_code):
+                continue
+
+            team_can = canonical_name(str(team_opta))
+            form_str = "-".join(list(str(int(form_code))))
+            key = (team_can, form_str)
+
+            quals = _parse_qualifiers(str(setup_row["represented_qualifiers"]))
+            involved = quals.get("Involved", [])
+            jerseys = quals.get("Jersey Number", [])
+            pos_codes = quals.get("Player Position", [])
+            slots = quals.get("Team Player Formation", [])
+
+            subs_off = df[(df["type_id"] == 18) & (df["team_name"] == team_opta)]
+
+            for pid, jn, pos, slot_str in zip(involved, jerseys, pos_codes, slots):
+                try:
+                    slot = int(slot_str)
+                except (ValueError, TypeError):
+                    continue
+                if slot == 0:
+                    continue
+
+                sub_off_row = subs_off[subs_off["player_id"] == pid]
+                minute_out = (
+                    int(sub_off_row.iloc[0]["time_min"])
+                    if not sub_off_row.empty
+                    else total_match_mins
+                )
+
+                entry = all_agg[key][pid]
+                entry["name"] = player_map.get(pid, entry["name"])
+                entry["jersey"] = jn
+                try:
+                    entry["pos_code"] = int(pos)
+                except (ValueError, TypeError):
+                    pass
+                entry["slot"] = slot
+                entry["starts"] += 1
+                entry["total_mins"] += minute_out
+
+    if not all_agg:
+        print(f"  ⚠ No formation lineup data found for {season}")
+        return
+
+    rows = []
+    for (team, form_str), player_dict in all_agg.items():
+        for pid, d in player_dict.items():
+            rows.append({
+                "team": team,
+                "formation_str": form_str,
+                "slot": d["slot"],
+                "player_id": pid,
+                "name": d["name"],
+                "jersey": d["jersey"],
+                "pos_code": d["pos_code"],
+                "pos_label": _POS_LABEL.get(d["pos_code"], ""),
+                "starts": d["starts"],
+                "total_mins": d["total_mins"],
+                "avg_mins_per_start": round(d["total_mins"] / d["starts"], 1) if d["starts"] else 0.0,
+            })
+
+    out = pd.DataFrame(rows).sort_values(
+        ["team", "formation_str", "slot", "starts"],
+        ascending=[True, True, True, False],
+    ).reset_index(drop=True)
+
+    _save_parquet(
+        out,
+        READY_DATA_DIR / f"formation_lineups_{season}.parquet",
+        f"Formation Lineups ({season.replace('_','/')})",
+    )
+    print(f"  ✓ Formation lineups done in {time.time()-t0:.1f}s")
 
 
 def precompute_all(seasons: list[str] | None = None) -> None:

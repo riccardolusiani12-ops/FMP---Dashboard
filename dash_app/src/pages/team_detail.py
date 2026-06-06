@@ -192,6 +192,18 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                                 type="circle",
                                 color="#8a1f33",
                             ),
+                            # Store tracks which formation card is active
+                            dcc.Store(id="selected-formation-store", data=None),
+                            # Lineup panel — hidden until a card is clicked
+                            dcc.Loading(
+                                html.Div(
+                                    id="formation-lineup-panel",
+                                    className="formation-lineup-panel",
+                                    style={"display": "none"},
+                                ),
+                                type="circle",
+                                color="#8a1f33",
+                            ),
                         ],
                         className="chart-section",
                     ),

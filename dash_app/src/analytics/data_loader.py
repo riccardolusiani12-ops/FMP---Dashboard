@@ -433,6 +433,65 @@ def load_formation_counts(team: str, season: str, min_count: int = 3) -> pd.Data
     return compute_formation_counts(season, team, min_count=min_count)
 
 
+def load_formation_lineup(
+    team: str,
+    season: str,
+    formation_str: str,
+) -> pd.DataFrame:
+    """
+    Load per-slot player stats for a specific team/season/formation from
+    the precomputed Parquet table (instant after first read).
+
+    Returns DataFrame with columns:
+        slot, player_id, name, jersey, pos_code, pos_label,
+        starts, total_mins, avg_mins_per_start
+    Sorted by slot asc, starts desc.
+    Falls back to the raw-CSV scanner if the Parquet file is missing.
+    """
+    parquet_path = READY_DATA_DIR / f"formation_lineups_{season}.parquet"
+    df = _read_parquet(str(parquet_path))
+    if df is not None and not df.empty:
+        mask = (df["team"] == team) & (df["formation_str"] == formation_str)
+        result = df[mask].copy()
+        if not result.empty:
+            return (
+                result.drop(columns=["team", "formation_str"], errors="ignore")
+                .sort_values(["slot", "starts"], ascending=[True, False])
+                .reset_index(drop=True)
+            )
+
+    log.warning(
+        "No precomputed lineup for %s/%s/%s — computing from raw",
+        team, season, formation_str,
+    )
+    from src.analytics.formations import extract_formation_lineup_stats
+    return extract_formation_lineup_stats(season, team, formation_str)
+
+
+def load_formation_positions(
+    team: str,
+    season: str,
+    formation_str: str,
+) -> pd.DataFrame:
+    """
+    Load median x/y positions (derived from event coordinates) for every player
+    who started for *team* in *formation_str* during *season*.
+
+    Returns DataFrame with columns:
+        player_id, name, median_x, median_y, n_events
+    Sorted by median_x ascending (GK → FWD direction).
+    Returns empty DataFrame if no precomputed data found.
+    """
+    parquet_path = READY_DATA_DIR / f"formation_positions_{season}.parquet"
+    df = _read_parquet(str(parquet_path))
+    if df is not None and not df.empty:
+        mask = (df["team"] == team) & (df["formation_str"] == formation_str)
+        result = df[mask].drop(columns=["team", "formation_str"], errors="ignore")
+        if not result.empty:
+            return result.sort_values("median_x").reset_index(drop=True)
+    return pd.DataFrame()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # xG SUMMARY
 # ═══════════════════════════════════════════════════════════════════════════════

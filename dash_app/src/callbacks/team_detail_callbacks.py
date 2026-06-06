@@ -11,7 +11,7 @@ KPIs: League Position · Last 5 Form · Goal Difference.
 
 from __future__ import annotations
 
-from dash import Input, Output, State, html, dcc, no_update
+from dash import Input, Output, State, html, dcc, no_update, ctx, ALL
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
@@ -26,6 +26,8 @@ from src.analytics.data_loader import (
     load_ppda_summary,
     load_team_overview,
     load_formation_counts,
+    load_formation_lineup,
+    load_formation_positions,
     load_xg_summary,
     load_goal_distribution,
     load_team_average_age,
@@ -353,6 +355,7 @@ def register_team_detail_callbacks(app):
 
     @app.callback(
         Output("formations-row", "children"),
+        Output("selected-formation-store", "data"),
         Input("team-season-selector", "value"),
         Input("team-context", "data"),
         prevent_initial_call=False,
@@ -361,7 +364,7 @@ def register_team_detail_callbacks(app):
         """Build the formations visual block from precomputed/raw data."""
         team = context.get("team", "")
         if not team or not selected_season:
-            return html.P("Select a team and season.", className="text-muted")
+            return html.P("Select a team and season.", className="text-muted"), None
 
         formations = load_formation_counts(team, selected_season, min_count=3)
 
@@ -378,7 +381,7 @@ def register_team_detail_callbacks(app):
                 className="formations-empty",
                 style={"display": "flex", "alignItems": "center",
                        "justifyContent": "center", "padding": "2rem"},
-            )
+            ), None
 
         cards = []
         for i, row in formations.iterrows():
@@ -386,31 +389,27 @@ def register_team_detail_callbacks(app):
             count = int(row["count"])
             pct = float(row["pct"])
 
-            fig = build_formation_pitch_figure(form_str, count=count, pct=pct)
+            lineup_df   = load_formation_lineup(team, selected_season, form_str)
+            positions_df = load_formation_positions(team, selected_season, form_str)
+            fig = build_formation_pitch_figure(
+                form_str, count=count, pct=pct,
+                lineup_df=lineup_df if not lineup_df.empty else None,
+                positions_df=positions_df if not positions_df.empty else None,
+            )
 
             rank_labels = ["Most Used", "2nd Most Used", "3rd Most Used"]
             rank_label = rank_labels[i] if i < len(rank_labels) else ""
 
             card = html.Div(
                 [
-                    # Rank badge
-                    html.Div(
-                        rank_label,
-                        className="formation-rank-badge",
-                    ),
-                    # Formation name
-                    html.H5(
-                        form_str,
-                        className="formation-name",
-                    ),
-                    # Pitch figure
+                    html.Div(rank_label, className="formation-rank-badge"),
+                    html.H5(form_str, className="formation-name"),
                     dcc.Graph(
                         figure=fig,
-                        config={"displayModeBar": False, "staticPlot": True},
+                        config={"displayModeBar": False},
                         responsive=False,
                         className="formation-pitch",
                     ),
-                    # Stats row
                     html.Div(
                         [
                             html.Div(
@@ -430,12 +429,162 @@ def register_team_detail_callbacks(app):
                         ],
                         className="formation-stats-row",
                     ),
+                    html.Div(
+                        [
+                            html.I(className="bi bi-people-fill me-1"),
+                            html.Span("View Squad"),
+                        ],
+                        className="formation-view-lineup-btn",
+                    ),
                 ],
-                className="formation-card",
+                id={"type": "formation-card", "index": form_str},
+                className="formation-card formation-card-clickable",
+                n_clicks=0,
             )
             cards.append(card)
 
-        return cards
+        return cards, None
+
+    # ══════════════════════════════════════════════════════════
+    # FORMATION CARD CLICK → STORE SELECTED FORMATION
+    # ══════════════════════════════════════════════════════════
+
+    @app.callback(
+        Output("selected-formation-store", "data", allow_duplicate=True),
+        Input({"type": "formation-card", "index": ALL}, "n_clicks"),
+        State("selected-formation-store", "data"),
+        prevent_initial_call=True,
+    )
+    def select_formation_card(n_clicks_list, current_selection):
+        if not any(n_clicks_list):
+            return no_update
+        triggered = ctx.triggered_id
+        if not triggered:
+            return no_update
+        clicked_formation = triggered["index"]
+        # Toggle off if clicking the already-selected card
+        if current_selection == clicked_formation:
+            return None
+        return clicked_formation
+
+    # ══════════════════════════════════════════════════════════
+    # FORMATION LINEUP PANEL CALLBACK
+    # ══════════════════════════════════════════════════════════
+
+    @app.callback(
+        Output("formation-lineup-panel", "children"),
+        Output("formation-lineup-panel", "style"),
+        Input("selected-formation-store", "data"),
+        State("team-context", "data"),
+        State("team-season-selector", "value"),
+        prevent_initial_call=True,
+    )
+    def update_formation_lineup(formation_str, context, selected_season):
+        """Render the per-position player stats panel for the selected formation."""
+        if not formation_str:
+            return [], {"display": "none"}
+
+        team = (context or {}).get("team", "")
+        if not team or not selected_season:
+            return [], {"display": "none"}
+
+        df = load_formation_lineup(team, selected_season, formation_str)
+        if df.empty:
+            return (
+                html.P("No lineup data available for this formation.",
+                       className="text-muted p-3"),
+                {"display": "block"},
+            )
+
+        pos_label_color = {"GK": "#3cb371", "DEF": "#8a1f33", "MID": "#4a90d9", "FWD": "#f5a623"}
+
+        # Build one player card per SLOT (top contributor only for the pitch marker)
+        top_per_slot = df.drop_duplicates("slot").set_index("slot")
+
+        # --- Build player cards list (all players, grouped by slot) ---
+        slot_groups = df.groupby("slot")
+        slots_sorted = sorted(slot_groups.groups.keys())
+
+        player_cards = []
+        for slot in slots_sorted:
+            group = slot_groups.get_group(slot)
+            # Position badge colour
+            pos_label = group.iloc[0]["pos_label"]
+            badge_color = pos_label_color.get(pos_label, "#666")
+
+            for _, player in group.iterrows():
+                is_top = player["starts"] == group["starts"].max() and group.index[0] == player.name
+                card = html.Div(
+                    [
+                        # Jersey + pos badge
+                        html.Div(
+                            [
+                                html.Span(
+                                    f"#{player['jersey']}",
+                                    className="flp-jersey",
+                                ),
+                                html.Span(
+                                    pos_label,
+                                    className="flp-pos-badge",
+                                    style={"background": badge_color},
+                                ),
+                            ],
+                            className="flp-header",
+                        ),
+                        # Player name
+                        html.Div(player["name"], className="flp-name"),
+                        # Stats
+                        html.Div(
+                            [
+                                html.Div([
+                                    html.Span("Starts", className="flp-stat-label"),
+                                    html.Span(str(player["starts"]), className="flp-stat-value"),
+                                ], className="flp-stat"),
+                                html.Div([
+                                    html.Span("Minutes", className="flp-stat-label"),
+                                    html.Span(str(player["total_mins"]), className="flp-stat-value"),
+                                ], className="flp-stat"),
+                                html.Div([
+                                    html.Span("Avg Min", className="flp-stat-label"),
+                                    html.Span(str(player["avg_mins_per_start"]), className="flp-stat-value"),
+                                ], className="flp-stat"),
+                            ],
+                            className="flp-stats-row",
+                        ),
+                    ],
+                    className=f"flp-player-card{'  flp-player-card--primary' if is_top else ' flp-player-card--depth'}",
+                )
+                player_cards.append(card)
+
+        panel_content = html.Div(
+            [
+                # Panel header
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.I(className="bi bi-people-fill me-2"),
+                                html.Span(
+                                    f"Most Used Players — {formation_str}",
+                                    className="flp-panel-title",
+                                ),
+                            ],
+                            className="flp-panel-header-left",
+                        ),
+                        html.Div(
+                            "Click the active formation card again to close",
+                            className="flp-panel-hint",
+                        ),
+                    ],
+                    className="flp-panel-header",
+                ),
+                # Player cards grid
+                html.Div(player_cards, className="flp-cards-grid"),
+            ],
+            className="flp-panel-inner",
+        )
+
+        return panel_content, {"display": "block"}
 
     # ══════════════════════════════════════════════════════════
     # GOALS & xG SECTION CALLBACK
