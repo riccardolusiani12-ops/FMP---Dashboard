@@ -28,6 +28,10 @@ from __future__ import annotations
 from dash import html, dcc
 import plotly.graph_objects as go
 
+from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.ui_components import ds_header
+
 from src.analytics.chance_creation import ORIGIN_LABELS
 from src.components.chance_creation_cards import TIER_META
 
@@ -35,18 +39,19 @@ from src.components.chance_creation_cards import TIER_META
 # CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PRIMARY = "#8a1f33"
+PRIMARY = COLORS_DARK["accent"]   # "#8a1f33"
 
-# Re-use the same origin colours/icons as chance_creation (consistent UX)
+# Re-use the same origin colours/icons as chance_creation (consistent UX) —
+# canonical attack-origin taxonomy (SEMANTIC_COLORS origin_*, values unchanged)
 ORIGIN_COLORS: dict[str, str] = {
-    "Set Piece":       "#22c55e",
-    "High Regain":     "#ef4444",
-    "Cross":           "#06b6d4",
-    "Through Ball":    "#8b5cf6",
-    "Cut Back":        "#f97316",
-    "Individual Play": "#eab308",
-    "Combination":     "#3b82f6",
-    "TOTAL":           "#8a1f33",
+    "Set Piece":       SEMANTIC_COLORS["origin_set_piece"],
+    "High Regain":     SEMANTIC_COLORS["origin_high_regain"],
+    "Cross":           SEMANTIC_COLORS["origin_cross"],
+    "Through Ball":    SEMANTIC_COLORS["origin_through_ball"],
+    "Cut Back":        SEMANTIC_COLORS["origin_cut_back"],
+    "Individual Play": SEMANTIC_COLORS["origin_individual_play"],
+    "Combination":     SEMANTIC_COLORS["origin_combination"],
+    "TOTAL":           COLORS_DARK["accent"],
 }
 
 ORIGIN_ICONS: dict[str, str] = {
@@ -196,6 +201,7 @@ def _section_origin_breakdown(shots_detail: list) -> html.Div:
             textfont=dict(size=10, color="#fff"),
             hovertemplate=f"{origin}: {count} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(bar_fig, "dark")
     bar_fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -282,6 +288,7 @@ def _section_xg_by_origin(matrix: dict) -> html.Div:
         textfont=dict(size=11, color="#e2e8f0"),
         hovertemplate="%{y}: xGA = %{x:.2f}<extra></extra>",
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=80, r=50, t=10, b=10),
@@ -438,6 +445,8 @@ def _section_origin_grid(shots_detail: list) -> html.Div:
     fig.add_annotation(x=92, y=-6, text="ATK →", showarrow=False,
                        font=dict(size=9, color="rgba(255,255,255,0.35)"))
 
+    apply_chart_theme(fig, "dark")
+
     fig.update_layout(
         plot_bgcolor="rgba(15,25,35,0.7)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -543,6 +552,7 @@ def _section_shot_quality(tiers: dict, shots_detail: list) -> html.Div:
         hovertemplate="%{label}: %{value} shots (%{percent})<extra></extra>",
         sort=False,
     )])
+    apply_chart_theme(donut_fig, "dark")
     donut_fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=10, r=10, t=10, b=10), height=220,
@@ -653,6 +663,8 @@ def _section_shot_map(shots_detail: list) -> html.Div:
             ))
 
     _draw_defensive_half(fig)
+
+    apply_chart_theme(fig, "dark")
 
     fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)",
@@ -804,17 +816,24 @@ def chance_conceded_card(data: dict) -> html.Div:
     sm      = data.get("shot_metrics", {})
     opp     = data.get("opponent", "Opponent")
 
+    _header = ds_header(
+        "Defensive Phase — Chance Conceded", "bi-shield-x",
+        "Chances Conceded",
+        f"Shots conceded vs {opp} — where they came from, "
+        "how they were created, and how dangerous they were",
+    )
+
     if sm.get("shots_total", 0) == 0 and not shots:
         return html.Div(
             [
-                html.H5("Chances Conceded", className="buildup-card-title"),
+                _header,
                 html.P(
                     "No opponent shots found for this match.",
                     className="text-muted",
                     style={"padding": "2rem", "textAlign": "center"},
                 ),
             ],
-            className="buildup-card",
+            className="buildup-card ma-card",
         )
 
     sep = html.Hr(
@@ -822,13 +841,7 @@ def chance_conceded_card(data: dict) -> html.Div:
     )
 
     sections = [
-        html.H5("Chances Conceded", className="buildup-card-title"),
-        html.P(
-            f"Shots conceded vs {opp} — where they came from, "
-            "how they were created, and how dangerous they were.",
-            className="kpi-subtitle",
-            style={"marginBottom": "1.25rem"},
-        ),
+        _header,
 
         # A — Overview KPIs
         _section_shot_overview(data),
@@ -858,4 +871,4 @@ def chance_conceded_card(data: dict) -> html.Div:
         _section_chain_to_concede_matrix(matrix),
     ]
 
-    return html.Div(sections, className="buildup-card")
+    return html.Div(sections, className="buildup-card ma-card")

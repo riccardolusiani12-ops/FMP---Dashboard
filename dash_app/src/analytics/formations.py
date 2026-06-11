@@ -648,14 +648,15 @@ def assign_players_to_dots(
 # STEP 4 — PLOTLY PITCH FIGURE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Visual palette
-_PITCH_BG       = "#1b2838"
-_LINE_COLOR     = "rgba(255, 255, 255, 0.15)"
-_LINE_WIDTH     = 1.2
-_DOT_RED        = "#8a1f33"          # bright red for outfield
-_DOT_GK         = "#3cb371"          # green for goalkeeper
-_GLOW_RED       = "rgba(230, 57, 70, 0.22)"
-_GLOW_GK        = "rgba(60, 179, 113, 0.22)"
+# Visual palette — sourced from the shared design system (theme.py).
+# Pitch markings/background now come from pitch_utils.draw_pitch(style="formation").
+from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
+from src.styling.pitch_utils import draw_pitch
+
+_DOT_RED        = COLORS_DARK["accent"]            # "#8a1f33" — outfield players
+_DOT_GK         = SEMANTIC_COLORS["gk_marker"]     # "#3cb371" — goalkeeper
+_GLOW_RED       = "rgba(230, 57, 70, 0.22)"        # soft glow behind outfield dots
+_GLOW_GK        = "rgba(60, 179, 113, 0.22)"       # soft glow behind GK dot
 
 
 def build_formation_pitch_figure(
@@ -684,7 +685,6 @@ def build_formation_pitch_figure(
                     median_x, median_y, n_events).
     """
     template_positions = _get_positions(formation_str)   # always 11 fixed dots
-    BELOW = "below"
 
     # ── Resolve per-dot player label via Hungarian assignment ─────────────────
     # dot_players[i] is the player dict assigned to template dot i (0-based).
@@ -721,52 +721,12 @@ def build_formation_pitch_figure(
 
     fig = go.Figure()
 
-    # ── Pitch markings (all layer="below" so they never cover traces) ──
-
-    # Outer boundary
-    fig.add_shape(type="rect", x0=0, y0=0, x1=100, y1=100,
-                  line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
-                  fillcolor=_PITCH_BG, layer=BELOW)
-    # Centre line
-    fig.add_shape(type="line", x0=50, y0=0, x1=50, y1=100,
-                  line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
-                  layer=BELOW)
-    # Centre circle
-    fig.add_shape(type="circle", x0=42, y0=42, x1=58, y1=58,
-                  line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
-                  layer=BELOW)
-    # Centre spot
-    fig.add_shape(type="circle", x0=49.3, y0=49.3, x1=50.7, y1=50.7,
-                  fillcolor=_LINE_COLOR, line=dict(width=0),
-                  layer=BELOW)
-    # Penalty areas
-    fig.add_shape(type="rect", x0=0, y0=22, x1=16.5, y1=78,
-                  line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
-                  layer=BELOW)
-    fig.add_shape(type="rect", x0=83.5, y0=22, x1=100, y1=78,
-                  line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
-                  layer=BELOW)
-    # 6-yard boxes
-    fig.add_shape(type="rect", x0=0, y0=36, x1=5.5, y1=64,
-                  line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
-                  layer=BELOW)
-    fig.add_shape(type="rect", x0=94.5, y0=36, x1=100, y1=64,
-                  line=dict(color=_LINE_COLOR, width=_LINE_WIDTH),
-                  layer=BELOW)
-    # Penalty spots
-    fig.add_shape(type="circle", x0=11.2, y0=49.3, x1=12.4, y1=50.7,
-                  fillcolor=_LINE_COLOR, line=dict(width=0),
-                  layer=BELOW)
-    fig.add_shape(type="circle", x0=87.6, y0=49.3, x1=88.8, y1=50.7,
-                  fillcolor=_LINE_COLOR, line=dict(width=0),
-                  layer=BELOW)
-    # Goal mouths
-    fig.add_shape(type="rect", x0=-2.5, y0=44, x1=0, y1=56,
-                  line=dict(color="rgba(255,255,255,0.20)", width=1.5),
-                  fillcolor="rgba(255,255,255,0.04)", layer=BELOW)
-    fig.add_shape(type="rect", x0=100, y0=44, x1=102.5, y1=56,
-                  line=dict(color="rgba(255,255,255,0.20)", width=1.5),
-                  fillcolor="rgba(255,255,255,0.04)", layer=BELOW)
+    # ── Pitch markings + square seamless layout (shared design system) ──
+    # First adopter of pitch_utils.draw_pitch (style="formation").
+    # The formation pitch intentionally stays DARK in both themes — the
+    # client-side theme observer skips ".formation-pitch" containers and the
+    # CSS keeps the dark card look in light mode (.pitch-dark convention).
+    draw_pitch(fig, theme="dark", style="formation", height=300, width=300)
 
     # ── Player markers — fixed template dots, hover label from assignment ──────
     gk_pos   = template_positions[0]
@@ -805,41 +765,17 @@ def build_formation_pitch_figure(
         ))
 
     # ── Layout ────────────────────────────────────────────────
-    # Square figure (300×300) with zero margins so the 110×110 data range
-    # maps to equal pixels on both axes.  The pitch rect (0→100) then has
-    # exactly 13.6 px of symmetrical padding on every side.
-    # paper_bgcolor == plot_bgcolor == pitch-shape fill → seamless dark rect.
-    layout_kwargs: dict = dict(
-        template="plotly_dark",
-        paper_bgcolor=_PITCH_BG,
-        plot_bgcolor=_PITCH_BG,
-        xaxis=dict(
-            range=[-5, 105],
-            showgrid=False, zeroline=False,
-            showticklabels=False, fixedrange=True,
-            visible=False,
-        ),
-        yaxis=dict(
-            range=[-5, 105],
-            showgrid=False, zeroline=False,
-            showticklabels=False, fixedrange=True,
-            visible=False,
-        ),
-        width=300,
-        height=300,
-        autosize=False,
-        margin=dict(l=0, r=0, t=0, b=0),
-        dragmode=False,
-    )
-
+    # Square 300×300 seamless layout already applied by draw_pitch()
+    # (style="formation"). Only the hover styling is chart-specific.
     if has_hover:
-        layout_kwargs["hoverlabel"] = dict(
-            bgcolor="#0d1b2a",
-            bordercolor="rgba(255,255,255,0.15)",
-            font=dict(family="Inter, system-ui, sans-serif", size=12, color="#e8eaf0"),
-            align="left",
+        fig.update_layout(
+            hoverlabel=dict(
+                bgcolor="#0d1b2a",
+                bordercolor="rgba(255,255,255,0.15)",
+                font=dict(family="Inter, system-ui, sans-serif", size=12, color="#e8eaf0"),
+                align="left",
+            ),
+            hovermode="closest",
         )
-        layout_kwargs["hovermode"] = "closest"
 
-    fig.update_layout(**layout_kwargs)
     return fig

@@ -26,25 +26,29 @@ import plotly.graph_objects as go
 from dash import dcc, html
 
 from src.components.buildup_cards import _chain_connector, _chain_event_node
+from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.ui_components import ds_header
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PALETTE & CONSTANTS
+# PALETTE & CONSTANTS — bound to the shared design system (values unchanged,
+# see theme.py Phase 2c additions)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PRIMARY   = "#8a1f33"
-GOAL_CLR      = "#22c55e"
-SOT_CLR       = "#3b82f6"
-SOFF_CLR      = "#f97316"
-CLEAR_CLR     = "#6b7280"
-SP_CLR        = "#8b5cf6"
-PLAYEDON_CLR  = "#06b6d4"  # cyan-500 — played on / no clearance / no shot
+PRIMARY   = COLORS_DARK["accent"]                       # "#8a1f33"
+GOAL_CLR      = SEMANTIC_COLORS["sp_goal"]              # "#22c55e"
+SOT_CLR       = SEMANTIC_COLORS["sp_shot_on_target"]    # "#3b82f6"
+SOFF_CLR      = SEMANTIC_COLORS["sp_shot_off_target"]   # "#f97316"
+CLEAR_CLR     = SEMANTIC_COLORS["sp_cleared"]           # "#6b7280"
+SP_CLR        = SEMANTIC_COLORS["sp_second_phase"]      # "#8b5cf6"
+PLAYEDON_CLR  = SEMANTIC_COLORS["sp_played_on"]         # cyan — played on / no shot
 
 DELIVERY_COLORS = {
-    "Inswinger":  "#3b82f6",
-    "Outswinger": "#f97316",
-    "Straight":   "#8b5cf6",
-    "Short":      "#22c55e",
-    "Unknown":    "#6b7280",
+    "Inswinger":  SEMANTIC_COLORS["delivery_inswinger"],
+    "Outswinger": SEMANTIC_COLORS["delivery_outswinger"],
+    "Straight":   SEMANTIC_COLORS["delivery_straight"],
+    "Short":      SEMANTIC_COLORS["delivery_short"],
+    "Unknown":    SEMANTIC_COLORS["delivery_unknown"],
 }
 
 OUTCOME_COLORS = {
@@ -228,6 +232,7 @@ def _section_delivery_type(data: dict) -> html.Div:
         textfont=dict(size=11, color="#e2e8f0"),
         hovertemplate="%{y}: %{x}<extra></extra>",
     ))
+    apply_chart_theme(bar_fig, "dark")
     bar_fig.update_layout(
         margin=dict(l=10, r=30, t=10, b=10),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -329,6 +334,12 @@ def _section_delivery_type(data: dict) -> html.Div:
 # C. DELIVERY MAPS — two vertical final-third pitch maps
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# NOTE (Phase 2c): these corner/FK/goalmouth pitch drawings are PORTRAIT-
+# oriented (figure x = Opta y, goal at top) with set-piece zone furniture
+# (GA/CA zones, corner arcs, goalmouth) that is part of the analysis itself.
+# pitch_utils.draw_pitch() is landscape-only, so adoption is intentionally
+# DEFERRED; figures are themed in place via apply_chart_theme() and the
+# shared SEMANTIC_COLORS palettes.
 def _pitch_shapes(is_left: bool) -> list:
     """
     Return Plotly shape dicts for the vertical final-third pitch.
@@ -474,6 +485,7 @@ def _build_corner_pitch_map(corners: list, is_left: bool, title: str) -> go.Figu
     flag_fig_x = 0.0 if is_left else 100.0
 
     if not corners:
+        apply_chart_theme(fig, "dark")
         fig.update_layout(**_pitch_layout(title, is_left, []))
         return fig
 
@@ -524,6 +536,8 @@ def _build_corner_pitch_map(corners: list, is_left: bool, title: str) -> go.Figu
             hovertemplate="%{text}<extra></extra>",
             showlegend=show_lg,
         ))
+
+    apply_chart_theme(fig, "dark")
 
     fig.update_layout(**_pitch_layout(title, is_left, _zone_annotations(is_left)))
     return fig
@@ -647,10 +661,14 @@ def corner_kicks_card(data: dict) -> html.Div:
         )
         return html.Div(
             [
-                html.H5("Corner Kicks", className="buildup-card-title"),
+                ds_header(
+                    "Set Pieces — Corners", "bi-flag-fill",
+                    "Corner Kicks",
+                    "Volume, delivery types and zone-by-zone delivery maps",
+                ),
                 empty_state,
             ],
-            className="buildup-card",
+            className="buildup-card ma-card",
             style={"padding": "1.5rem"},
         )
 
@@ -658,7 +676,11 @@ def corner_kicks_card(data: dict) -> html.Div:
 
     return html.Div(
         [
-            html.H5("Corner Kicks", className="buildup-card-title"),
+            ds_header(
+                "Set Pieces — Corners", "bi-flag-fill",
+                "Corner Kicks",
+                "Volume, delivery types and zone-by-zone delivery maps",
+            ),
 
             # A — Volume & Outcomes
             html.Div(_section_volume_outcomes(data), style={"marginBottom": "1.5rem"}),
@@ -673,7 +695,7 @@ def corner_kicks_card(data: dict) -> html.Div:
             # C — Zone Heatmap
             html.Div(_section_delivery_maps(data)),
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
         style={"padding": "1.5rem"},
     )
 
@@ -682,27 +704,27 @@ def corner_kicks_card(data: dict) -> html.Div:
 # ║                        FREE KICKS CARD                                   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ─── Palette ──────────────────────────────────────────────────────────────────
+# ─── Palette — bound to the shared design system (values unchanged) ───────────
 FK_TYPE_COLORS: dict = {
-    "Direct Shot":      "#ef4444",
-    "Crossed into Box": "#3b82f6",
-    "Chipped / Lofted": "#8b5cf6",
-    "Long Ball":        "#f97316",
-    "Short":            "#22c55e",
-    "Launch":           "#eab308",
-    "Unknown":          "#6b7280",
+    "Direct Shot":      SEMANTIC_COLORS["fk_direct_shot"],
+    "Crossed into Box": SEMANTIC_COLORS["fk_crossed"],
+    "Chipped / Lofted": SEMANTIC_COLORS["fk_chipped"],
+    "Long Ball":        SEMANTIC_COLORS["fk_long_ball"],
+    "Short":            SEMANTIC_COLORS["fk_short"],
+    "Launch":           SEMANTIC_COLORS["fk_launch"],
+    "Unknown":          SEMANTIC_COLORS["delivery_unknown"],
 }
 
 FK_OUTCOME_COLORS: dict = {
-    "Goal":              "#22c55e",
-    "Shot on Target":    "#3b82f6",
-    "Shot off Target":   "#f97316",
-    "Hit Post":          "#eab308",
-    "Blocked":           "#ef4444",
-    "Second Phase":      "#8b5cf6",
-    "Foul Won":          "#06b6d4",
-    "Assist":            "#06b6d4",
-    "Cleared / No Shot": "#6b7280",
+    "Goal":              SEMANTIC_COLORS["sp_goal"],
+    "Shot on Target":    SEMANTIC_COLORS["sp_shot_on_target"],
+    "Shot off Target":   SEMANTIC_COLORS["sp_shot_off_target"],
+    "Hit Post":          SEMANTIC_COLORS["sp_hit_post"],
+    "Blocked":           SEMANTIC_COLORS["sp_blocked"],
+    "Second Phase":      SEMANTIC_COLORS["sp_second_phase"],
+    "Foul Won":          SEMANTIC_COLORS["sp_foul_won"],
+    "Assist":            SEMANTIC_COLORS["sp_foul_won"],
+    "Cleared / No Shot": SEMANTIC_COLORS["sp_cleared"],
 }
 
 _FK_TYPE_ORDER = [
@@ -961,6 +983,7 @@ def _build_goalmouth_figure(direct_shots: list) -> go.Figure:
 
 
 def _apply_gm_layout(fig: go.Figure) -> None:
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -1084,6 +1107,7 @@ def _build_fk_shot_pitch_map(direct_shots: list) -> go.Figure:
     ))
 
     if not direct_shots:
+        apply_chart_theme(fig, "dark")
         fig.update_layout(**_fk_pitch_layout("Direct FK Shots — Origin & Trajectory", []))
         return fig
 
@@ -1140,6 +1164,8 @@ def _build_fk_shot_pitch_map(direct_shots: list) -> go.Figure:
             hovertemplate="%{text}<extra></extra>",
             showlegend=show_lg,
         ))
+
+    apply_chart_theme(fig, "dark")
 
     fig.update_layout(**_fk_pitch_layout("Direct FK Shots — Origin & Trajectory", []))
     return fig
@@ -1284,6 +1310,7 @@ def _build_fk_delivery_pitch_map(deliveries: list) -> go.Figure:
             dict(x=50, y=FK_HALF_LINE - 0.8, text="Halfway Line", showarrow=False,
                  font=dict(size=7, color="rgba(255,255,255,0.28)"), xanchor="center"),
         ]
+        apply_chart_theme(fig, "dark")
         fig.update_layout(**_layout)
         return fig
 
@@ -1379,6 +1406,7 @@ def _build_fk_delivery_pitch_map(deliveries: list) -> go.Figure:
         dict(x=50, y=FK_HALF_LINE - 0.8, text="Halfway Line", showarrow=False,
              font=dict(size=7, color="rgba(255,255,255,0.28)"), xanchor="center"),
     ]
+    apply_chart_theme(fig, "dark")
     fig.update_layout(**_layout)
     return fig
 
@@ -1478,6 +1506,7 @@ def _fk_section_delivery_type(data: dict) -> html.Div:
         textfont=dict(size=11, color="#e2e8f0"),
         hovertemplate="%{y}: %{x}<extra></extra>",
     ))
+    apply_chart_theme(bar_fig, "dark")
     bar_fig.update_layout(
         margin=dict(l=10, r=30, t=10, b=10),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -1879,10 +1908,16 @@ def free_kicks_card(data: dict) -> html.Div:
     """
     total = data.get("total", 0)
 
+    _header = ds_header(
+        "Set Pieces — Free Kicks", "bi-slash-circle",
+        "Free Kicks",
+        "Deliveries into the box, direct shots and goalmouth placement",
+    )
+
     if total == 0:
         return html.Div(
             [
-                html.H5("Free Kicks", className="buildup-card-title"),
+                _header,
                 html.Div(
                     [
                         html.I(className="bi bi-slash-circle me-2",
@@ -1894,7 +1929,7 @@ def free_kicks_card(data: dict) -> html.Div:
                     style={"textAlign": "center", "padding": "3rem 1rem"},
                 ),
             ],
-            className="buildup-card",
+            className="buildup-card ma-card",
             style={"padding": "1.5rem"},
         )
 
@@ -1902,7 +1937,7 @@ def free_kicks_card(data: dict) -> html.Div:
 
     return html.Div(
         [
-            html.H5("Free Kicks", className="buildup-card-title"),
+            _header,
 
             # A1 — FK Deliveries KPI row
             html.Div(_fk_section_volume_deliveries(data),
@@ -1931,6 +1966,6 @@ def free_kicks_card(data: dict) -> html.Div:
             # C — Direct Shot pitch + goalmouth maps
             html.Div(_fk_section_direct_shots(data)),
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
         style={"padding": "1.5rem"},
     )

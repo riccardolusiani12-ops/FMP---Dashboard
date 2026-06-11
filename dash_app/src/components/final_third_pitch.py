@@ -9,15 +9,19 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
+from src.styling.theme import SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.pitch_utils import draw_pitch
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PALETTE CONSTANTS
+# PALETTE CONSTANTS — bound to the shared design system (values unchanged)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 CORRIDOR_COLORS = {
-    "L": "#3b82f6",   # blue  — Left
-    "C": "#8b5cf6",   # purple — Centre
-    "R": "#06b6d4",   # cyan  — Right
+    "L": SEMANTIC_COLORS["corridor_left"],     # blue  — Left
+    "C": SEMANTIC_COLORS["corridor_centre"],   # purple — Centre
+    "R": SEMANTIC_COLORS["corridor_right"],    # cyan  — Right
 }
 
 CORRIDOR_LABELS = {
@@ -26,15 +30,17 @@ CORRIDOR_LABELS = {
     "R": "Right",
 }
 
+# Canonical FT entry-method taxonomy (SEMANTIC_COLORS method_* — also used by
+# Defensive Structure's structural mirror since Phase 2a)
 METHOD_COLORS = {
-    "transition_recovery": "#22c55e",   # green
-    "through_ball":        "#f43f5e",   # rose
-    "switch_of_play":      "#14b8a6",   # teal
-    "set_piece":           "#6366f1",   # indigo
-    "long_ball":           "#f97316",   # orange
-    "cross_delivery":      "#ec4899",   # pink — distinct from orange and amber
-    "individual_carry":    "#eab308",   # amber
-    "short_pass":          "#3b82f6",   # blue
+    "transition_recovery": SEMANTIC_COLORS["method_transition_recovery"],  # green
+    "through_ball":        SEMANTIC_COLORS["method_through_ball"],         # rose
+    "switch_of_play":      SEMANTIC_COLORS["method_switch_of_play"],       # teal
+    "set_piece":           SEMANTIC_COLORS["method_set_piece"],            # indigo
+    "long_ball":           SEMANTIC_COLORS["method_long_ball"],            # orange
+    "cross_delivery":      SEMANTIC_COLORS["method_cross_delivery"],       # pink
+    "individual_carry":    SEMANTIC_COLORS["method_individual_carry"],     # amber
+    "short_pass":          SEMANTIC_COLORS["method_short_pass"],           # blue
 }
 
 METHOD_LABELS = {
@@ -49,8 +55,8 @@ METHOD_LABELS = {
 }
 
 OUTCOME_COLORS = {
-    "positive": "#22c55e",   # green
-    "negative": "#ef4444",   # red
+    "positive": SEMANTIC_COLORS["outcome_positive"],   # green
+    "negative": SEMANTIC_COLORS["outcome_negative"],   # red
 }
 
 # Zone grid (mirrors pitch_zones.py)
@@ -64,12 +70,12 @@ _FT_X = 66.67
 # FT zone type colours
 # Z14 = central danger (purple), Z13/15/16/18 = flanks (cyan), Z17 = box (no fill)
 _ZONE_TYPE_COLOR = {
-    13: "#06b6d4",   # cyan — flank
-    14: "#8b5cf6",   # purple — Zone 14
-    15: "#06b6d4",   # cyan — flank
-    16: "#06b6d4",   # cyan — flank
-    17: None,        # box — no color (transparent)
-    18: "#06b6d4",   # cyan — flank
+    13: SEMANTIC_COLORS["zone_flank"],   # cyan — flank
+    14: SEMANTIC_COLORS["zone14"],       # purple — Zone 14
+    15: SEMANTIC_COLORS["zone_flank"],   # cyan — flank
+    16: SEMANTIC_COLORS["zone_flank"],   # cyan — flank
+    17: None,                            # box — no color (transparent)
+    18: SEMANTIC_COLORS["zone_flank"],   # cyan — flank
 }
 
 
@@ -77,115 +83,12 @@ _ZONE_TYPE_COLOR = {
 # SHARED PITCH-DRAWING HELPER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _draw_pitch_base(fig: go.Figure, draw_zones: bool = False) -> None:
-    """
-    Add standard pitch markings to *fig* in-place.
-
-    Parameters
-    ----------
-    draw_zones : bool
-        When True, overlay the full 18-zone grid (row and corridor lines)
-        as faint background divisions.  Used on scatter plots so the
-        L/C/R corridor split and zone rows are visible.
-    """
-    # Outer pitch rectangle
-    fig.add_shape(
-        type="rect", x0=0, x1=100, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.35)", width=1.5),
-        fillcolor="rgba(0,0,0,0)",
-        layer="below",
-    )
-
-    # ── Optional 18-zone grid ──────────────────────────────────────────────────
-    if draw_zones:
-        # Horizontal corridor dividers (y-axis lines at 33.33 and 66.67)
-        for y_val in (33.33, 66.67):
-            fig.add_shape(
-                type="line", x0=0, x1=100, y0=y_val, y1=y_val,
-                line=dict(color="rgba(255,255,255,0.12)", width=1),
-                layer="below",
-            )
-        # Vertical zone-row dividers (x-axis lines at each row boundary)
-        for x_val in _X_EDGES[1:-1]:   # 16.67, 33.33, 50.0, 66.67, 83.33
-            fig.add_shape(
-                type="line", x0=x_val, x1=x_val, y0=0, y1=100,
-                line=dict(color="rgba(255,255,255,0.08)", width=1),
-                layer="below",
-            )
-        # Corridor labels (near own goal, facing attacking direction)
-        # Opta y=0 is the right touchline (broadcast view bottom);
-        # from the player's perspective (attacking L→R) low-y = Right, high-y = Left.
-        for label, y_centre in (("Right", 16.67), ("Centre", 50.0), ("Left", 83.33)):
-            fig.add_annotation(
-                x=2, y=y_centre,
-                text=label,
-                showarrow=False,
-                font=dict(size=8, color="rgba(255,255,255,0.22)"),
-                textangle=-90,
-            )
-
-    # Halfway line
-    fig.add_shape(
-        type="line", x0=50, x1=50, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dash"),
-        layer="below",
-    )
-
-    # Own penalty box (x 0–16.5, y 21–79)
-    fig.add_shape(
-        type="rect", x0=0, x1=16.5, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-
-    # Attacking penalty box (x 83.5–100, y 21–79)
-    fig.add_shape(
-        type="rect", x0=83.5, x1=100, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-
-    # Final third line (highlighted)
-    fig.add_shape(
-        type="line", x0=_FT_X, x1=_FT_X, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.6)", width=2, dash="dash"),
-    )
-
-    # Direction labels
-    fig.add_annotation(
-        x=92, y=-5,
-        text="ATK →",
-        showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.35)"),
-    )
-    fig.add_annotation(
-        x=8, y=-5,
-        text="← OWN GOAL",
-        showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.35)"),
-    )
-
-
-def _base_layout(fig: go.Figure, title: str, height: int = 400,
-                 show_legend: bool = False) -> None:
-    """Apply the shared dark-theme layout to *fig* in-place."""
-    fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#f0f0f0"), x=0.5),
-        xaxis=dict(
-            range=[-2, 102], showgrid=False, zeroline=False,
-            showticklabels=False, fixedrange=True,
-        ),
-        yaxis=dict(
-            range=[-10, 105], showgrid=False, zeroline=False,
-            showticklabels=False, fixedrange=True,
-            scaleanchor="x", scaleratio=0.68,
-        ),
-        plot_bgcolor="rgba(15,25,35,0.7)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=10, r=10, t=40, b=20),
-        height=height,
-        showlegend=show_legend,
-    )
+# NOTE (Phase 2b): the former private _draw_pitch_base() / _base_layout()
+# helpers were replaced by the shared, theme-aware
+# src.styling.pitch_utils.draw_pitch() (draw_zones=True +
+# highlight_final_third=True reproduce the zone grid and FT line).
+# ft_zone_outcome_heatmap keeps its bespoke zone canvas (the zones ARE the
+# data) with the themed layout applied inline.
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -250,19 +153,18 @@ def ft_entry_scatter_method(entries: list[dict]) -> go.Figure:
             showlegend=True,
         ))
 
-    _draw_pitch_base(fig, draw_zones=True)
-    _base_layout(fig, "Entry Points by Method", height=400, show_legend=True)
+    # Shared theming first (fonts, hover), then the canonical pitch markings
+    # + layout from the design system; chart-specific legend/margins last.
+    apply_chart_theme(fig, "dark")
+    draw_pitch(
+        fig, theme="dark",
+        title="Entry Points by Method",
+        height=400, show_legend=True,
+        draw_zones=True, highlight_final_third=True,
+    )
     fig.update_layout(
-        legend=dict(
-            orientation="v",
-            yanchor="middle", y=0.5,
-            xanchor="left", x=1.01,
-            font=dict(size=9, color="#d0d0d0"),
-            bgcolor="rgba(15,25,35,0.8)",
-            bordercolor="rgba(255,255,255,0.1)",
-            borderwidth=1,
-        ),
         margin=dict(l=10, r=130, t=40, b=20),
+        legend=dict(font=dict(size=9)),
     )
     return fig
 
@@ -383,7 +285,7 @@ def ft_zone_outcome_heatmap(entries: list[dict]) -> go.Figure:
                 # Outcome dots (●n format)
                 oc = zone_outcomes.get(zone_num, {})
                 dot_parts: list[str] = []
-                for key, dot_color in (("positive", "#22c55e"), ("negative", "#ef4444")):
+                for key, dot_color in OUTCOME_COLORS.items():
                     n = oc.get(key, 0)
                     if n > 0:
                         dot_parts.append(
@@ -430,5 +332,23 @@ def ft_zone_outcome_heatmap(entries: list[dict]) -> go.Figure:
         font=dict(size=9, color="rgba(255,255,255,0.35)"),
     )
 
-    _base_layout(fig, "FT Entry Zones & Outcomes", height=400, show_legend=False)
+    # Themed layout (replaces the former _base_layout — geometry unchanged)
+    apply_chart_theme(fig, "dark")
+    fig.update_layout(
+        title=dict(text="FT Entry Zones & Outcomes", font=dict(size=13), x=0.5),
+        xaxis=dict(
+            range=[-2, 102], showgrid=False, zeroline=False,
+            showticklabels=False, fixedrange=True,
+        ),
+        yaxis=dict(
+            range=[-10, 105], showgrid=False, zeroline=False,
+            showticklabels=False, fixedrange=True,
+            scaleanchor="x", scaleratio=0.68,
+        ),
+        plot_bgcolor="rgba(15,25,35,0.7)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=10, t=40, b=20),
+        height=400,
+        showlegend=False,
+    )
     return fig

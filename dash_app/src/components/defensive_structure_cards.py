@@ -23,31 +23,40 @@ from __future__ import annotations
 from dash import html, dcc
 import plotly.graph_objects as go
 
+from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.pitch_utils import draw_pitch
+from src.styling.ui_components import ds_header
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# PALETTE
+# PALETTE — bound to the shared design system (values unchanged, see theme.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PRIMARY           = "#8a1f33"
-HIGH_COLOR        = "#ef4444"
-MID_COLOR         = "#f97316"
-LOW_COLOR         = "#6b7280"
-SUCCESS_COLOR     = "#22c55e"
-FAIL_COLOR        = "#ef4444"
+PRIMARY           = COLORS_DARK["accent"]                  # "#8a1f33"
+HIGH_COLOR        = SEMANTIC_COLORS["press_high"]          # "#ef4444"
+MID_COLOR         = SEMANTIC_COLORS["press_mid"]           # "#f97316"
+LOW_COLOR         = SEMANTIC_COLORS["press_low"]           # "#6b7280"
+SUCCESS_COLOR     = SEMANTIC_COLORS["outcome_positive"]    # "#22c55e"
+FAIL_COLOR        = SEMANTIC_COLORS["outcome_negative"]    # "#ef4444"
 
-TRANSITION_COLOR  = "#f97316"
-OFFSIDE_COLOR     = "#8b5cf6"
-MIRROR_COLOR      = "#ef4444"
+TRANSITION_COLOR  = SEMANTIC_COLORS["transition_n1"]       # "#f97316"
+OFFSIDE_COLOR     = SEMANTIC_COLORS["offside_line"]        # "#8b5cf6"
+MIRROR_COLOR      = SEMANTIC_COLORS["outcome_negative"]    # "#ef4444"
 
-CORRIDOR_COLORS = {"L": "#3b82f6", "C": "#8b5cf6", "R": "#06b6d4"}
+CORRIDOR_COLORS = {
+    "L": SEMANTIC_COLORS["corridor_left"],
+    "C": SEMANTIC_COLORS["corridor_centre"],
+    "R": SEMANTIC_COLORS["corridor_right"],
+}
 CORRIDOR_LABELS = {"L": "Left", "C": "Centre", "R": "Right"}
 
 ZONE_GROUP_COLORS = {"high": HIGH_COLOR, "mid": MID_COLOR, "low": LOW_COLOR}
 ZONE_GROUP_LABELS = {"high": "High", "mid": "Mid", "low": "Low"}
 
 OUTCOME_COLORS = {
-    "N1": "#f97316",   # orange
-    "N2": "#ef4444",   # red
-    "N3": "#7f1d1d",   # dark red
+    "N1": SEMANTIC_COLORS["transition_n1"],   # orange
+    "N2": SEMANTIC_COLORS["transition_n2"],   # red
+    "N3": SEMANTIC_COLORS["transition_n3"],   # dark red
 }
 
 OUTCOME_LABELS = {
@@ -86,86 +95,10 @@ def _mini_kpi(label: str, value, subtitle: str, color: str, icon: str) -> html.D
     )
 
 
-def _draw_full_pitch(fig: go.Figure) -> None:
-    """Add standard dark-theme full-pitch markings to *fig* in-place."""
-    fig.add_shape(
-        type="rect", x0=0, x1=100, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.35)", width=1.5),
-        fillcolor="rgba(0,0,0,0)", layer="below",
-    )
-    for y_val in (33.33, 66.67):
-        fig.add_shape(
-            type="line", x0=0, x1=100, y0=y_val, y1=y_val,
-            line=dict(color="rgba(255,255,255,0.10)", width=1), layer="below",
-        )
-    for x_val in _X_EDGES[1:-1]:
-        fig.add_shape(
-            type="line", x0=x_val, x1=x_val, y0=0, y1=100,
-            line=dict(color="rgba(255,255,255,0.07)", width=1), layer="below",
-        )
-    fig.add_shape(
-        type="line", x0=50, x1=50, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.22)", width=1, dash="dash"),
-        layer="below",
-    )
-    # Own penalty box
-    fig.add_shape(
-        type="rect", x0=0, x1=16.5, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-    # Attacking penalty box
-    fig.add_shape(
-        type="rect", x0=83.5, x1=100, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-    fig.add_annotation(
-        x=94, y=-6, text="ATK \u2192", showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.30)"),
-    )
-    fig.add_annotation(
-        x=6, y=-6, text="\u2190 OWN GOAL", showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.30)"),
-    )
-    for label, y_centre in (("Right", 16.67), ("Centre", 50.0), ("Left", 83.33)):
-        fig.add_annotation(
-            x=1, y=y_centre, text=label, showarrow=False, textangle=-90,
-            font=dict(size=8, color="rgba(255,255,255,0.18)"),
-        )
-
-
-def _pitch_layout(
-    fig: go.Figure,
-    title: str,
-    height: int = 430,
-    show_legend: bool = True,
-    x_range: list | None = None,
-) -> None:
-    """Apply shared dark-theme layout."""
-    x_range = x_range or [-2, 102]
-    fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#f0f0f0"), x=0.5),
-        xaxis=dict(range=x_range, showgrid=False, zeroline=False,
-                   showticklabels=False, fixedrange=True),
-        yaxis=dict(range=[-12, 106], showgrid=False, zeroline=False,
-                   showticklabels=False, fixedrange=True,
-                   scaleanchor="x", scaleratio=0.68),
-        plot_bgcolor="rgba(15,25,35,0.7)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=10, r=120, t=40, b=20),
-        height=height,
-        showlegend=show_legend,
-        legend=dict(
-            orientation="v", yanchor="middle", y=0.5,
-            xanchor="left", x=1.01,
-            font=dict(size=10, color="#d0d0d0"),
-            bgcolor="rgba(15,25,35,0.8)",
-            bordercolor="rgba(255,255,255,0.1)",
-            borderwidth=1,
-        ),
-        font=dict(color="var(--text-secondary)"),
-    )
+# NOTE (Phase 2a): the former private _draw_full_pitch() / _pitch_layout()
+# helpers were replaced by the shared, theme-aware
+# src.styling.pitch_utils.draw_pitch() (draw_zones=True reproduces the zone
+# grid + corridor labels these helpers drew).
 
 
 def _subsection_title(text: str) -> html.H6:
@@ -304,6 +237,7 @@ def _section_outcome_bar(data: dict) -> dcc.Graph:
             textfont=dict(size=11, color="#fff"),
             hovertemplate=f"{OUTCOME_LABELS[level]}: {count} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -333,6 +267,7 @@ def _section_outcomes_by_zone(data: dict) -> dcc.Graph:
             marker_color=color,
             hovertemplate=f"{level} \u2014 %{{x}}: %{{y}}<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="group",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -367,6 +302,7 @@ def _section_outcomes_by_corridor(data: dict) -> dcc.Graph:
             marker_color=color,
             hovertemplate=f"{level} \u2014 %{{x}}: %{{y}}<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="group",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -389,7 +325,6 @@ def _section_outcomes_by_corridor(data: dict) -> dcc.Graph:
 
 def _build_transition_pitch(origins: list[dict], offside_line_x: float | None = None) -> go.Figure:
     fig = go.Figure()
-    _draw_full_pitch(fig)
 
     # Shaded orange: own attacking half + attacking third (x = 50 → 100)
     fig.add_shape(
@@ -447,11 +382,16 @@ def _build_transition_pitch(origins: list[dict], offside_line_x: float | None = 
             ],
         ))
 
-    _pitch_layout(
+    # Shared theming first (fonts, hover), then the canonical pitch markings
+    # + layout from the design system (markings sit on layer="below").
+    apply_chart_theme(fig, "dark")
+    draw_pitch(
         fig,
-        "Transition Loss Origins (Qualified \xb7 Middle + Attacking Third)",
+        theme="dark",
+        title="Transition Loss Origins (Qualified \xb7 Middle + Attacking Third)",
         height=430,
         show_legend=True,
+        draw_zones=True,
     )
     return fig
 
@@ -513,6 +453,7 @@ def _section_offside_trap(d: dict) -> html.Div:
             hovertemplate=f"{CORRIDOR_LABELS[key]}: {count}<extra></extra>",
         ))
 
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="group",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -577,6 +518,7 @@ def _section_structural_mirror(d: dict) -> html.Div:
             textfont=dict(size=11, color="#fff"),
             hovertemplate=f"{CORRIDOR_LABELS[key]}: {n} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(corridor_fig, "dark")
     corridor_fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -588,16 +530,18 @@ def _section_structural_mirror(d: dict) -> html.Div:
 
     method_pcts   = d.get("opp_method_pcts", {})
     method_counts = d.get("opp_method_counts", {})
+    # Bound to the shared FT-entry method taxonomy (SEMANTIC_COLORS method_*)
+    # so each method has the SAME colour here as on the Final Third card.
     METHOD_PALETTE = {
-        "short_pass":            "#3b82f6",
-        "long_ball":             "#ef4444",
-        "individual_carry":      "#f97316",
-        "through_ball":          "#22c55e",
-        "cross":                 "#8b5cf6",
-        "switch_of_play":        "#06b6d4",
-        "set_piece":             "#fbbf24",
-        "transition_recovery":   "#f43f5e",
-        "high_regain":           "#84cc16",
+        "short_pass":            SEMANTIC_COLORS["method_short_pass"],
+        "long_ball":             SEMANTIC_COLORS["method_long_ball"],
+        "individual_carry":      SEMANTIC_COLORS["method_individual_carry"],
+        "through_ball":          SEMANTIC_COLORS["method_through_ball"],
+        "cross":                 SEMANTIC_COLORS["method_cross_delivery"],
+        "switch_of_play":        SEMANTIC_COLORS["method_switch_of_play"],
+        "set_piece":             SEMANTIC_COLORS["method_set_piece"],
+        "transition_recovery":   SEMANTIC_COLORS["method_transition_recovery"],
+        "high_regain":           SEMANTIC_COLORS["method_high_regain"],
     }
     method_fig = go.Figure()
     for method_key, pct in method_pcts.items():
@@ -617,6 +561,7 @@ def _section_structural_mirror(d: dict) -> html.Div:
             textfont=dict(size=11, color="#fff"),
             hovertemplate=f"{label}: {n} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(method_fig, "dark")
     method_fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -710,8 +655,13 @@ def defensive_structure_card(data: dict) -> html.Div:
 
     return html.Div(
         [
-            # ── Card header ────────────────────────────────────────────────────
-            html.H5("Defensive Transition", className="buildup-card-title"),
+            # ── Card header (house style) ──────────────────────────────────────
+            ds_header(
+                "Defensive Phase — Structure", "bi-diagram-2-fill",
+                "Defensive Transition",
+                "How the team reacts after losing the ball — outcomes, zones "
+                "and loss origins",
+            ),
 
             # ── Defensive Transitions ─────────────────────────────────────────
             _subsection_title("Defensive Transitions"),
@@ -765,6 +715,6 @@ def defensive_structure_card(data: dict) -> html.Div:
             ),
 
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
         style={"padding": "1.5rem"},
     )

@@ -21,21 +21,26 @@ from __future__ import annotations
 from dash import html, dcc
 import plotly.graph_objects as go
 
+from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.pitch_utils import draw_pitch
+from src.styling.ui_components import ds_header
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# PALETTE
+# PALETTE — bound to the shared design system (values unchanged, see theme.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PRIMARY    = "#8a1f33"
-HIGH_COLOR = "#ef4444"   # red — aggressive / high press
-MID_COLOR  = "#f97316"   # orange
-LOW_COLOR  = "#6b7280"   # grey — low block
-SUCCESS_COLOR = "#22c55e"
-FAIL_COLOR    = "#ef4444"
+PRIMARY    = COLORS_DARK["accent"]                 # "#8a1f33"
+HIGH_COLOR = SEMANTIC_COLORS["press_high"]         # red — aggressive / high press
+MID_COLOR  = SEMANTIC_COLORS["press_mid"]          # orange
+LOW_COLOR  = SEMANTIC_COLORS["press_low"]          # grey — low block
+SUCCESS_COLOR = SEMANTIC_COLORS["outcome_positive"]
+FAIL_COLOR    = SEMANTIC_COLORS["outcome_negative"]
 
 CORRIDOR_COLORS = {
-    "L": "#3b82f6",   # blue
-    "C": "#8b5cf6",   # purple
-    "R": "#06b6d4",   # cyan
+    "L": SEMANTIC_COLORS["corridor_left"],     # blue
+    "C": SEMANTIC_COLORS["corridor_centre"],   # purple
+    "R": SEMANTIC_COLORS["corridor_right"],    # cyan
 }
 CORRIDOR_LABELS = {"L": "Left", "C": "Centre", "R": "Right"}
 
@@ -98,7 +103,8 @@ def _ppda_color(val: float | None) -> str:
     return "#ef4444"
 
 
-OFFSIDE_COLOR = "#a855f7"   # purple
+# Harmonised to the offside-line purple used on the pitch maps (was #a855f7)
+OFFSIDE_COLOR = SEMANTIC_COLORS["offside_line"]   # "#8b5cf6"
 
 
 def _section_overview(d: dict) -> html.Div:
@@ -186,6 +192,7 @@ def _section_defensive_actions(d: dict) -> html.Div:
             hovertemplate=f"{label}: {n} ({pct}%)<extra></extra>",
         ))
 
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -258,6 +265,7 @@ def _section_pressing_direction(d: dict) -> html.Div:
             textfont=dict(size=11, color="#fff"),
             hovertemplate=f"{CORRIDOR_LABELS[key]}: {counts[key]} ({pcts[key]}%)<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -321,6 +329,7 @@ def _section_pressing_success(d: dict) -> html.Div:
         marker_color=FAIL_COLOR,
         hovertemplate="%{x}: %{y} unsuccessful<extra></extra>",
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="group",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -407,7 +416,9 @@ def _build_combined_heatmap_outcomes(
         y1 = _Y_EDGES[col + 1]
         count = zone_counts.get(zone_num, 0)
         intensity = count / max_count
-        # Dark navy → crimson gradient (same as pitch_zones.py)
+        # Dark navy → crimson gradient — the dashboard's unified sequential
+        # ramp (encoded as SEMANTIC_COLORS["heatmap_colorscale"]; same
+        # interpolation as pitch_zones.py)
         r = int(27  + (138 - 27)  * intensity)
         g = int(40  + (31  - 40)  * intensity)
         b = int(56  + (51  - 56)  * intensity)
@@ -470,8 +481,9 @@ def _build_combined_heatmap_outcomes(
             text=[p[2] for p in pts],
         ))
 
-    _draw_full_pitch(fig)
-    _pitch_layout(fig, "Action Density + Press Outcomes", height=430, show_legend=True)
+    apply_chart_theme(fig, "dark")
+    draw_pitch(fig, theme="dark", title="Action Density + Press Outcomes",
+               height=430, show_legend=True, draw_zones=True)
     return fig
 
 
@@ -482,96 +494,23 @@ def _build_combined_heatmap_outcomes(
 _X_EDGES = [0, 16.67, 33.33, 50.0, 66.67, 83.33, 100.0]
 _Y_EDGES = [0, 33.33, 66.67, 100.0]
 
+# Bound to the shared defensive-action taxonomy (SEMANTIC_COLORS action_*)
 ACTION_COLORS = {
-    "Tackle":        "#3b82f6",   # blue
-    "Interception":  "#22c55e",   # green
-    "Foul":          "#f97316",   # orange
-    "Ball Recovery": "#8b5cf6",   # purple
-    "Clearance":     "#f59e0b",   # amber
-    "Aerial":        "#06b6d4",   # cyan
-    "Challenge":     "#ec4899",   # pink
-    "Blocked Pass":  "#84cc16",   # lime
+    "Tackle":        SEMANTIC_COLORS["action_tackle"],        # blue
+    "Interception":  SEMANTIC_COLORS["action_interception"],  # green
+    "Foul":          SEMANTIC_COLORS["action_foul"],          # orange
+    "Ball Recovery": SEMANTIC_COLORS["action_recovery"],      # purple
+    "Clearance":     SEMANTIC_COLORS["action_clearance"],     # amber
+    "Aerial":        SEMANTIC_COLORS["action_aerial"],        # cyan
+    "Challenge":     SEMANTIC_COLORS["action_challenge"],     # pink
+    "Blocked Pass":  SEMANTIC_COLORS["action_blocked_pass"],  # lime
 }
 
 
-def _draw_full_pitch(fig: go.Figure) -> None:
-    """Add standard dark-theme full-pitch markings to *fig* in-place."""
-    # Outer rectangle
-    fig.add_shape(
-        type="rect", x0=0, x1=100, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.35)", width=1.5),
-        fillcolor="rgba(0,0,0,0)", layer="below",
-    )
-    # Zone grid (faint)
-    for y_val in (33.33, 66.67):
-        fig.add_shape(
-            type="line", x0=0, x1=100, y0=y_val, y1=y_val,
-            line=dict(color="rgba(255,255,255,0.10)", width=1), layer="below",
-        )
-    for x_val in _X_EDGES[1:-1]:
-        fig.add_shape(
-            type="line", x0=x_val, x1=x_val, y0=0, y1=100,
-            line=dict(color="rgba(255,255,255,0.07)", width=1), layer="below",
-        )
-    # Halfway line
-    fig.add_shape(
-        type="line", x0=50, x1=50, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.22)", width=1, dash="dash"), layer="below",
-    )
-    # Own penalty box
-    fig.add_shape(
-        type="rect", x0=0, x1=16.5, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-    # Attacking penalty box
-    fig.add_shape(
-        type="rect", x0=83.5, x1=100, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-    # Direction labels
-    fig.add_annotation(
-        x=94, y=-6, text="ATK →", showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.30)"),
-    )
-    fig.add_annotation(
-        x=6, y=-6, text="← OWN GOAL", showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.30)"),
-    )
-    # Corridor labels
-    for label, y_centre in (("Right", 16.67), ("Centre", 50.0), ("Left", 83.33)):
-        fig.add_annotation(
-            x=1, y=y_centre, text=label, showarrow=False, textangle=-90,
-            font=dict(size=8, color="rgba(255,255,255,0.18)"),
-        )
-
-
-def _pitch_layout(fig: go.Figure, title: str, height: int = 430,
-                  show_legend: bool = True) -> None:
-    """Apply shared dark-theme layout."""
-    fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#f0f0f0"), x=0.5),
-        xaxis=dict(range=[-2, 102], showgrid=False, zeroline=False,
-                   showticklabels=False, fixedrange=True),
-        yaxis=dict(range=[-12, 106], showgrid=False, zeroline=False,
-                   showticklabels=False, fixedrange=True,
-                   scaleanchor="x", scaleratio=0.68),
-        plot_bgcolor="rgba(15,25,35,0.7)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=10, r=120, t=40, b=20),
-        height=height,
-        showlegend=show_legend,
-        legend=dict(
-            orientation="v", yanchor="middle", y=0.5,
-            xanchor="left", x=1.01,
-            font=dict(size=10, color="#d0d0d0"),
-            bgcolor="rgba(15,25,35,0.8)",
-            bordercolor="rgba(255,255,255,0.1)",
-            borderwidth=1,
-        ),
-        font=dict(color="var(--text-secondary)"),
-    )
+# NOTE (Phase 2a): the former private _draw_full_pitch() / _pitch_layout()
+# helpers were replaced by the shared, theme-aware
+# src.styling.pitch_utils.draw_pitch() (draw_zones=True reproduces the zone
+# grid + corridor labels these helpers drew).
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -623,8 +562,6 @@ def _build_actions_scatter(
             text=[p[2] for p in pts],
         ))
 
-    _draw_full_pitch(fig)
-
     if median_x is not None:
         fig.add_shape(
             type="line",
@@ -653,7 +590,9 @@ def _build_actions_scatter(
             xanchor="center",
         )
 
-    _pitch_layout(fig, "Defensive Actions by Type", height=430, show_legend=True)
+    apply_chart_theme(fig, "dark")
+    draw_pitch(fig, theme="dark", title="Defensive Actions by Type",
+               height=430, show_legend=True, draw_zones=True)
     return fig
 
 
@@ -672,8 +611,13 @@ def defensive_pressing_card(data: dict) -> html.Div:
     """
     return html.Div(
         [
-            # Card header
-            html.H5("Pressure", className="buildup-card-title"),
+            # Card header (house style)
+            ds_header(
+                "Defensive Phase — Pressing", "bi-speedometer2",
+                "Pressure",
+                "PPDA, pressing height and direction, press success and "
+                "defensive action maps",
+            ),
 
             # A — Overview
             html.Div(
@@ -766,6 +710,6 @@ def defensive_pressing_card(data: dict) -> html.Div:
                 ],
             ),
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
         style={"padding": "1.5rem"},
     )

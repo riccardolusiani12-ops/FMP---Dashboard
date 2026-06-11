@@ -4,6 +4,359 @@
  * Font: Inter
  */
 
+/* ── Phase 0 Design-System Additions ────────────────────────────────────────── */
+/* These rules are ADDITIVE — they do not alter any existing selector.           */
+/* They introduce the warm-parchment light-theme background (#FAF7F0) and a     */
+/* .redesign-card helper class for future Phase 1+ adoption.                    */
+/* The JS theme observer (theme_callbacks.py) already works by toggling         */
+/* .light-theme on <body> and .app-root; new CSS vars below are inherited       */
+/* automatically.  No JS changes are needed in Phase 0.                         */
+/* PHASE 4 TODO: audit observer against any newly themed chart components that  */
+/* mount after the initial toggle (dcc.Loading lazy mounts).                    */
+
+/* Warm-parchment background for light theme (Phase 0: additive override).      */
+/* Replaces the cool-blue #f4f6f9 that was in .light-theme above with a warmer  */
+/* #FAF7F0.  The selector below is more specific than .light-theme alone so it  */
+/* wins without touching the original rule.                                      */
+body.light-theme,
+.light-theme body {
+    background-color: #FAF7F0 !important;
+}
+
+.light-theme.app-root,
+.app-root.light-theme {
+    background-color: #FAF7F0;
+}
+
+/* Phase 0 helper: rounded card shell — used by later phases when migrating     */
+/* individual sections to the new design system.  Not applied to anything yet.  */
+.redesign-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    transition: var(--transition);
+}
+
+.light-theme .redesign-card {
+    background: linear-gradient(160deg, #ffffff 0%, #f7f8fa 100%);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+}
+
+/* ── End Phase 0 Additions ──────────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 1 — TEAM OVERVIEW REDESIGN (scoped under .team-overview)
+   House style: rounded cards with a thin accent top strip, eyebrow + title +
+   subtitle headers, KPI blocks with large values and small uppercase labels.
+   All rules are ADDITIVE and scoped to the team detail page only, so shared
+   classes (.kpi-card, .chart-section, …) keep their look on other tabs.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Card shell: accent top strip on every section card ─────────────────── */
+.team-overview .chart-section {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius);
+    padding: 1.6rem 1.7rem;
+}
+
+.team-overview .chart-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-light), transparent 70%);
+    opacity: 0.9;
+}
+
+.team-overview .placeholder-section::before {
+    opacity: 0.25;
+}
+
+/* ── Section headers: eyebrow + title + subtitle ────────────────────────── */
+.team-overview .ds-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 1.2rem;
+}
+
+.team-overview .ds-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.6px;
+    color: var(--primary-light);
+}
+
+.team-overview .ds-eyebrow i {
+    font-size: 0.8rem;
+}
+
+.team-overview .ds-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 2px 0 0 0;
+    letter-spacing: 0.2px;
+}
+
+.team-overview .ds-sub {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.light-theme .team-overview .ds-title {
+    color: #1a1a2e;
+}
+
+.light-theme .team-overview .ds-sub {
+    color: #4a5568;
+}
+
+.light-theme .team-overview .ds-eyebrow {
+    color: var(--primary);
+}
+
+/* ── KPI cards: large value, small uppercase label, soft rounded block ──── */
+.team-overview .kpi-card {
+    border-radius: var(--radius);
+    padding: 1.15rem 1.35rem;
+    gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+}
+
+.team-overview .kpi-card:hover {
+    border-color: var(--border-subtle);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.team-overview .kpi-label {
+    font-size: 0.66rem;
+    letter-spacing: 1.2px;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.team-overview .kpi-value {
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.team-overview .kpi-icon {
+    font-size: 1.35rem;
+    opacity: 0.85;
+}
+
+.light-theme .team-overview .kpi-card {
+    background: linear-gradient(160deg, #ffffff 0%, #f9f7f3 100%);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.light-theme .team-overview .kpi-card:hover {
+    border-color: rgba(138, 31, 51, 0.25);
+    box-shadow: 0 4px 16px rgba(138, 31, 51, 0.10);
+}
+
+/* ── Season selector pills (Points Progression card) ────────────────────── */
+.team-overview .season-pills-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 1rem;
+}
+
+.team-overview .season-pill {
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-light);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+    user-select: none;
+}
+
+.team-overview .season-pill:hover {
+    border-color: var(--primary-light);
+    color: var(--text-primary);
+}
+
+.team-overview .season-pill--active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+}
+
+.team-overview .season-pill--active:hover {
+    background: var(--primary-light);
+    color: #ffffff;
+}
+
+.light-theme .team-overview .season-pill {
+    border-color: rgba(0, 0, 0, 0.12);
+    color: #4a5568;
+}
+
+.light-theme .team-overview .season-pill:hover {
+    border-color: var(--primary);
+    color: #1a1a2e;
+}
+
+.light-theme .team-overview .season-pill--active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+}
+
+/* ── Goal distribution tiles: polish only (values/bins untouched) ───────── */
+.team-overview .gd-tile {
+    border-radius: 10px;
+}
+
+.team-overview .gd-row-label {
+    letter-spacing: 1.2px;
+}
+
+/* ── End Phase 1 Additions ──────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 2a — MATCH ANALYSIS CARDS (scoped under .ma-card)
+   House style applied to the Defensive Structure / Pressing / Castle and
+   Offensive Transitions cards. Mirrors the Phase 1 .team-overview rules but
+   scoped to the redesigned match-analysis cards only, so untouched cards
+   (Final Third, Chance Creation, …) keep their current look.
+   All rules ADDITIVE.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Card shell: accent top strip ────────────────────────────────────────── */
+.ma-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius);
+}
+
+.ma-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-light), transparent 70%);
+    opacity: 0.9;
+}
+
+/* ── Section headers: eyebrow + title + subtitle ────────────────────────── */
+.ma-card .ds-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 1.2rem;
+}
+
+.ma-card .ds-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.6px;
+    color: var(--primary-light);
+}
+
+.ma-card .ds-eyebrow i {
+    font-size: 0.8rem;
+}
+
+.ma-card .ds-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 2px 0 0 0;
+    letter-spacing: 0.2px;
+}
+
+.ma-card .ds-sub {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.light-theme .ma-card .ds-title {
+    color: #1a1a2e;
+}
+
+.light-theme .ma-card .ds-sub {
+    color: #4a5568;
+}
+
+.light-theme .ma-card .ds-eyebrow {
+    color: var(--primary);
+}
+
+/* ── Mini-KPI cards inside redesigned match-analysis cards ──────────────── */
+.ma-card .kpi-card {
+    border-radius: var(--radius);
+    padding: 1.15rem 1.35rem;
+    gap: 14px;
+    background: rgba(15, 25, 35, 0.5);
+    border: 1px solid var(--border-light);
+}
+
+.ma-card .kpi-card:hover {
+    border-color: var(--border-subtle);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.ma-card .kpi-label {
+    font-size: 0.66rem;
+    letter-spacing: 1.2px;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.ma-card .kpi-value {
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.ma-card .kpi-icon {
+    font-size: 1.35rem;
+    opacity: 0.85;
+}
+
+.light-theme .ma-card .kpi-card {
+    background: linear-gradient(160deg, #ffffff 0%, #f9f7f3 100%);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.light-theme .ma-card .kpi-card:hover {
+    border-color: rgba(138, 31, 51, 0.25);
+    box-shadow: 0 4px 16px rgba(138, 31, 51, 0.10);
+}
+
+/* ── End Phase 2a Additions ─────────────────────────────────────────────── */
+
 /* ── CSS Variables ──────────────────────────────────────────────────────────── */
 :root {
     --primary: #8a1f33;
@@ -27,8 +380,11 @@
 }
 
 /* ── Light Theme Overrides ──────────────────────────────────────────────────── */
+/* Phase 4: light background unified on warm parchment #FAF7F0 (was cool-blue
+   #f4f6f9 — these later rules beat the Phase 0 top-of-file override at equal
+   specificity, so the values are corrected here at the source). */
 .light-theme {
-    --bg-dark: #f4f6f9;
+    --bg-dark: #FAF7F0;
     --bg-card: rgba(255, 255, 255, 0.92);
     --bg-card-hover: rgba(255, 255, 255, 1);
     --secondary: #ffffff;
@@ -44,13 +400,13 @@
 
 .light-theme body,
 body.light-theme {
-    background-color: #f4f6f9 !important;
+    background-color: #FAF7F0 !important;
     color: #1a1a2e !important;
 }
 
 /* When app-root has light-theme class, style the body via JS-applied class */
 .light-theme {
-    background-color: #f4f6f9;
+    background-color: #FAF7F0;
     color: #1a1a2e;
 }
 
@@ -474,7 +830,7 @@ body.light-theme {
 
 /* Scrollbar */
 .light-theme ::-webkit-scrollbar-track {
-    background: #f4f6f9;
+    background: #FAF7F0;
 }
 
 .light-theme ::-webkit-scrollbar-thumb {
@@ -935,22 +1291,24 @@ body {
 /* ── Last 5 Form Badges ────────────────────────────────────────────────────── */
 .form-badges-row {
     display: flex;
-    gap: 5px;
+    gap: 3px;
     margin-top: 4px;
+    flex-wrap: nowrap;
 }
 
 .form-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    font-size: 0.75rem;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    font-size: 0.65rem;
     font-weight: 700;
     color: #fff;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
     text-transform: uppercase;
+    flex-shrink: 0;
 }
 
 /* ── Chart Sections ─────────────────────────────────────────────────────────── */
@@ -2476,4 +2834,81 @@ body {
     .mr-score-logo { width: 60px; height: 60px; }
     .mr-score-team { font-size: 1.1rem; }
     .mr-score-value { font-size: 2.4rem; }
+}
+
+/* ── Standings zone legend (below Points Progression chart) ── */
+.standings-zone-legend {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0.5rem 0.75rem;
+    margin-top: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.standings-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 1rem;
+}
+
+.standings-legend-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+.standings-legend-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.standings-legend-divider {
+    width: 1px;
+    height: 16px;
+    background: var(--border-light);
+}
+
+/* ── Season Record card ── */
+.record-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+}
+
+.record-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+}
+
+.record-num {
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.record-ltr {
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    line-height: 1;
+}
+
+.record-dot {
+    font-size: 1rem;
+    color: var(--text-muted);
+    line-height: 1;
+    align-self: center;
+    margin-bottom: 6px;
 }

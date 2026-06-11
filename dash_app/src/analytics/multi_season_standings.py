@@ -23,6 +23,8 @@ import plotly.graph_objects as go
 
 from src.config import RAW_DATA_DIR
 from src.team_mapping import canonical_name
+from src.styling.theme import SEASON_MUTED_PALETTE, GLOW_ACCENT, get_colors
+from src.styling.plotly_template import apply_chart_theme
 
 
 # ── SEASONS LIST ──────────────────────────────────────────────────────────────
@@ -298,6 +300,7 @@ def build_standings_figure(
     team: str,
     highlight_season: Optional[str] = None,
     theme: str = "dark",
+    final_position: Optional[str] = None,
 ) -> go.Figure:
     """
     Build the interactive points-progression Plotly figure for a single
@@ -317,34 +320,35 @@ def build_standings_figure(
     theme : str, optional
         "dark" (default) or "light" — controls badge text colour so labels
         remain legible on both chart backgrounds.
+    final_position : str, optional
+        Ordinal league position for the highlighted season (e.g. "3rd").
+        When given, a small badge is drawn at the end of the highlighted line.
 
     Returns
     -------
     go.Figure — ready to embed in a dcc.Graph
     """
+    colors = get_colors(theme)
+    accent = colors["accent"]
+
     if progression_df.empty or not team:
         fig = go.Figure()
-        fig.update_layout(
-            template="plotly_dark",
-            title="No data available",
-            paper_bgcolor="#1b2838",
-            plot_bgcolor="#1b2838",
-        )
-        return fig
+        fig.update_layout(title="No data available")
+        return apply_chart_theme(fig, theme)
 
     tdf = progression_df[progression_df["Team"] == team]
     if tdf.empty:
         fig = go.Figure()
-        fig.update_layout(
-            template="plotly_dark",
-            title=f"No data for {team}",
-            paper_bgcolor="#1b2838",
-            plot_bgcolor="#1b2838",
-        )
-        return fig
+        fig.update_layout(title=f"No data for {team}")
+        return apply_chart_theme(fig, theme)
+
+    # Drop matchday 0 / -1 artefacts from CSV parsing fallback
+    tdf = tdf[tdf["Matchday"] >= 1]
 
     seasons_for_team = sorted(tdf["Season"].unique())
     fig = go.Figure()
+
+    hl_last_point: Optional[tuple] = None   # (matchday, points) of highlighted line end
 
     for j, season in enumerate(seasons_for_team):
         sdf = tdf[tdf["Season"] == season].sort_values("Matchday")
@@ -362,16 +366,37 @@ def build_standings_figure(
             )
             hover_texts.append(ht)
 
+        if is_hl:
+            # Soft-glow layer beneath the highlighted season: a wider
+            # semi-transparent line + larger translucent markers, skipped by
+            # hover so all interactivity stays on the solid trace above.
+            fig.add_trace(go.Scatter(
+                x=sdf["Matchday"],
+                y=sdf["CumulativePoints"],
+                mode="lines+markers",
+                line=dict(color=GLOW_ACCENT, width=9),
+                marker=dict(size=14, color=GLOW_ACCENT),
+                hoverinfo="skip",
+                showlegend=False,
+                visible=True,
+            ))
+            if not sdf.empty:
+                hl_last_point = (
+                    int(sdf["Matchday"].iloc[-1]),
+                    int(sdf["CumulativePoints"].iloc[-1]),
+                )
+
         fig.add_trace(go.Scatter(
             x=sdf["Matchday"],
             y=sdf["CumulativePoints"],
             mode="lines+markers",
             name=season,
             line=dict(
-                color="#8a1f33" if is_hl else PALETTE[j % len(PALETTE)],
-                width=3.5 if is_hl else 2,
+                color=accent if is_hl else SEASON_MUTED_PALETTE[j % len(SEASON_MUTED_PALETTE)],
+                width=3.5 if is_hl else 1.6,
             ),
             marker=dict(size=7 if is_hl else 4),
+            opacity=1.0 if is_hl else 0.75,
             hovertemplate="%{text}",
             text=hover_texts,
             visible=True,
@@ -380,7 +405,6 @@ def build_standings_figure(
     # ── Benchmark lines (median final-season cutoffs, 2021/22 – 2025/26) ──
     # UCL: 1st–4th (direct), UEL: 5th (direct), UECL: 6th (playoff)
     # Relegation: 17th place = last safe spot (median 33 pts across 5 seasons)
-    # All labels use an opaque badge annotation for readability on both themes.
     BENCHMARKS = [
         {"y": 70, "color": "#0E1E5B", "label": "UCL (Top 4) — ~70 pts"},
         {"y": 68, "color": "#F47E01", "label": "UEL (Top 5) — ~68 pts"},
@@ -388,64 +412,70 @@ def build_standings_figure(
         {"y": 33, "color": "#FF1A1A", "label": "Relegation zone — ~33 pts"},
     ]
 
-    is_dark = (theme != "light")
-    # Badge text is white on dark theme, near-black on light theme for contrast.
-    badge_font_color = "white" if is_dark else "#111111"
+    # ── Shaded milestone bands (low z-order, behind data lines) ──
+    # Each band sits exactly between its two bounding dashed lines.
+    # Europa/Conference is split into the two distinct qualification slots.
+    BANDS = [
+        {"y0": 0,  "y1": 33, "color": "#FF1A1A"},   # Relegation zone
+        {"y0": 63, "y1": 68, "color": "#F47E01"},   # UECL playoff (63→68)
+        {"y0": 68, "y1": 70, "color": "#F47E01"},   # UEL (68→70)
+        {"y0": 70, "y1": 100, "color": "#0E1E5B"},  # Champions League
+    ]
 
     max_matchday = int(progression_df["Matchday"].max()) if not progression_df.empty else 38
+    # Clamp to valid matchdays (1–38)
+    max_matchday = max(max_matchday, 38)
+
+    for band in BANDS:
+        fig.add_shape(
+            type="rect",
+            x0=1,
+            x1=max_matchday,
+            y0=band["y0"],
+            y1=band["y1"],
+            fillcolor=band["color"],
+            opacity=0.10,
+            line_width=0,
+            layer="below",
+        )
 
     for bm in BENCHMARKS:
+        # Dashed threshold line — kept unchanged
         fig.add_shape(
             type="line",
             x0=1,
             x1=max_matchday,
             y0=bm["y"],
             y1=bm["y"],
-            line=dict(color=bm["color"], width=1.8, dash="dash"),
+            line=dict(color=bm["color"], width=1.2, dash="dash"),
+            opacity=0.55,
         )
-        # Opaque badge annotation — uses the line colour as background so the
-        # label is always readable regardless of the chart background.
+        # Badge annotation removed — zone legend is rendered below the chart
+
+    # ── End-of-line position badge for the highlighted season ──
+    if final_position and hl_last_point is not None:
         fig.add_annotation(
-            x=1,
-            y=bm["y"],
-            text=f"<b>{bm['label']}</b>",
+            x=hl_last_point[0],
+            y=hl_last_point[1],
+            text=f"<b>{final_position}</b>",
             showarrow=False,
             xanchor="left",
-            yanchor="bottom",
-            font=dict(size=10, color=badge_font_color),
-            bgcolor=bm["color"],
-            bordercolor="rgba(255,255,255,0.25)" if is_dark else "rgba(0,0,0,0.20)",
-            borderwidth=1,
-            borderpad=3,
-            opacity=0.92,
+            xshift=12,
+            font=dict(size=11, color="#ffffff"),
+            bgcolor=accent,
+            borderwidth=0,
+            borderpad=4,
+            opacity=0.95,
         )
 
+    # Shared design-system theming LAST, then chart-specific layout on top.
+    apply_chart_theme(fig, theme)
     fig.update_layout(
-        template="plotly_dark",
-        title=dict(
-            text=f"Points Progression — {team}",
-            font=dict(size=18, color="white"),
-        ),
-        xaxis=dict(
-            title="Matchday",
-            dtick=1,
-            gridcolor="rgba(255,255,255,0.06)",
-        ),
-        yaxis=dict(
-            title="Cumulative Points",
-            gridcolor="rgba(255,255,255,0.06)",
-        ),
-        legend=dict(
-            font=dict(size=11),
-            bgcolor="rgba(0,0,0,0.45)",
-            bordercolor="rgba(255,255,255,0.2)",
-            borderwidth=1,
-            tracegroupgap=4,
-        ),
-        paper_bgcolor="#1b2838",
-        plot_bgcolor="#1b2838",
+        xaxis=dict(title="Matchday", dtick=1, range=[1, max_matchday]),
+        yaxis=dict(title="Cumulative Points", dtick=10),
+        legend=dict(tracegroupgap=4),
         height=620,
-        margin=dict(t=80, l=60, r=30, b=50),
+        margin=dict(t=30, l=60, r=60, b=50),
         hovermode="closest",
     )
 

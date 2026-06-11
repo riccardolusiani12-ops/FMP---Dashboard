@@ -41,10 +41,12 @@ def register_theme_callbacks(app):
 
             function patchPlots() {
                 document.querySelectorAll(".js-plotly-plot").forEach(function(plot) {
-                    // Leave static pitch-field charts alone (formations, buildup pitch)
+                    // Leave dark-by-design pitch charts alone. Phase 4 audit:
+                    // every such chart is wrapped in .pitch-dark-container (or
+                    // .formation-pitch for formation cards); the old
+                    // .pitch-zone-container / .final-third-pitch-container
+                    // selectors matched nothing and were removed.
                     if (plot.closest(".formation-pitch") ||
-                        plot.closest(".pitch-zone-container") ||
-                        plot.closest(".final-third-pitch-container") ||
                         plot.closest(".pitch-dark-container")) return;
 
                     try {

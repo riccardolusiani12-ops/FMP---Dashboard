@@ -384,11 +384,12 @@ def compute_league_offensive_benchmarks(season: str) -> dict[str, Any]:
         for _, row in summary.iterrows():
             team = canonical_name(str(row.get("team", "")))
             benchmarks[team] = {
-                "xg_per_match":          float(row.get("xg_per_match", 0.0)),
-                "shots_per_match":       float(row.get("shots_per_match", 0.0)),
-                "ft_per_match":          float(row.get("ft_per_match", 0.0)),
-                "gk_short_success_rate": float(row.get("gk_short_success_rate", 0.0)),
-                "gk_long_success_rate":  float(row.get("gk_long_success_rate", 0.0)),
+                "xg_per_match":              float(row.get("xg_per_match", 0.0)),
+                "shots_per_match":           float(row.get("shots_per_match", 0.0)),
+                "ft_per_match":              float(row.get("ft_per_match", 0.0)),
+                "gk_short_success_rate":     float(row.get("gk_short_success_rate", 0.0)),
+                "gk_long_success_rate":      float(row.get("gk_long_success_rate", 0.0)),
+                "ft_box_touches_per_match":  float(row.get("ft_box_touches_per_match", 0.0)),
             }
     else:
         # Fallback: use fast xg/ppda parquets (no FT/GK benchmark available)

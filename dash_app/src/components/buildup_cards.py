@@ -17,6 +17,9 @@ from __future__ import annotations
 from dash import html, dcc
 import plotly.graph_objects as go
 
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.ui_components import ds_header
+
 from src.components.pitch_zones import pitch_zone_figure, OUTCOME_COLORS
 
 
@@ -59,6 +62,7 @@ def buildup_type_summary(data: dict) -> html.Div:
         textfont=dict(size=12, color="#fff"),
         hovertemplate="Long: %{x:.1f}%<extra></extra>",
     ))
+    apply_chart_theme(bar_fig, "dark")
     bar_fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -257,6 +261,7 @@ def granular_outcome_summary(data: dict) -> html.Div:
         textfont=dict(size=11, color="white"),
         insidetextorientation="radial",
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -622,22 +627,29 @@ def goalkeeper_buildup_card(data: dict) -> html.Div:
     Assemble the full Build-up from Goal Kicks card.
     Combines three sub-sections (A–C).
     """
+    _header = ds_header(
+        "Build-up — Goal Kicks", "bi-diagram-3",
+        "Build-up from Goal Kicks",
+        "Short vs long distribution, first-receiver zones, outcomes and "
+        "event chains",
+    )
+
     if data.get("total", 0) == 0:
         return html.Div(
             [
-                html.H5("Build-up from Goal Kicks", className="buildup-card-title"),
+                _header,
                 html.P(
                     "No goal kicks found for this team in this match.",
                     className="text-muted",
                     style={"padding": "2rem", "textAlign": "center"},
                 ),
             ],
-            className="buildup-card",
+            className="buildup-card ma-card",
         )
 
     return html.Div(
         [
-            html.H5("Build-up from Goal Kicks", className="buildup-card-title"),
+            _header,
             buildup_type_summary(data),
             html.Hr(style={"borderColor": "var(--border-light)", "margin": "1.5rem 0"}),
             target_zone_distribution(data),
@@ -646,5 +658,5 @@ def goalkeeper_buildup_card(data: dict) -> html.Div:
             html.Hr(style={"borderColor": "var(--border-light)", "margin": "1.5rem 0"}),
             event_chain_section(data),
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
     )
