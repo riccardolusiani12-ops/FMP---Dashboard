@@ -9,8 +9,12 @@ Follows the exact same patterns as general_buildup_cards.py.
 
 from __future__ import annotations
 
+import dash_bootstrap_components as dbc
 from dash import html, dcc
 import plotly.graph_objects as go
+
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.ui_components import ds_header
 
 from src.components.final_third_pitch import (
     METHOD_COLORS,
@@ -196,21 +200,353 @@ def _tempo_card(m: dict) -> html.Div:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# POSSESSION MODAL HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_MODAL_BG     = "rgba(15,25,35,0.97)"
+_PURPLE       = "#8b5cf6"
+_PURPLE_DARK  = "#6d28d9"
+_PURPLE_LIGHT = "#a78bfa"
+_PURPLE_MID   = "#7c3aed"   # mid-tone for second (opponent) half fill
+
+
+def _possession_bands_figure(
+    bands: list[dict],
+    team_name: str,
+    opp_name: str,
+) -> go.Figure:
+    """
+    Diverging horizontal bar chart — possession % per 15-min band.
+    Team bars grow left (dark purple), opponent bars grow right (light purple).
+    """
+    if not bands:
+        return go.Figure()
+
+    visible = [b for b in bands if b["team_pct"] > 0 or b["opp_pct"] > 0]
+    if not visible:
+        visible = bands
+
+    labels    = [b["label"]    for b in visible]
+    team_pcts = [b["team_pct"] for b in visible]
+    opp_pcts  = [b["opp_pct"]  for b in visible]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        y=labels, x=[-v for v in team_pcts], orientation="h",
+        name=team_name,
+        marker_color=_PURPLE,
+        marker_line=dict(color="rgba(255,255,255,0.10)", width=1),
+        text=[f"{v}%" for v in team_pcts],
+        textposition="inside", insidetextanchor="end",
+        textfont=dict(size=11, color="#f0f0f0"),
+        hovertemplate=f"{team_name}: %{{customdata}}%<extra></extra>",
+        customdata=team_pcts,
+    ))
+
+    fig.add_trace(go.Bar(
+        y=labels, x=opp_pcts, orientation="h",
+        name=opp_name,
+        marker_color=_PURPLE_LIGHT,
+        marker_line=dict(color="rgba(255,255,255,0.10)", width=1),
+        text=[f"{v}%" for v in opp_pcts],
+        textposition="inside", insidetextanchor="start",
+        textfont=dict(size=11, color="#1a0533"),
+        hovertemplate=f"{opp_name}: %{{x}}%<extra></extra>",
+    ))
+
+    apply_chart_theme(fig, "dark")
+
+    fig.update_layout(
+        barmode="overlay",
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        height=max(300, len(visible) * 36 + 40),
+        margin=dict(l=8, r=8, t=8, b=8),
+        xaxis=dict(
+            showgrid=False, showticklabels=False,
+            zeroline=True, zerolinecolor="rgba(255,255,255,0.3)", zerolinewidth=1.5,
+            range=[-105, 105], fixedrange=True,
+        ),
+        yaxis=dict(
+            showgrid=False,
+            tickfont=dict(size=11, color="#c4b5fd"),
+            fixedrange=True, autorange="reversed",
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation="h", y=1.06, x=0.5, xanchor="center",
+            font=dict(size=11, color="#d0d0d0"), bgcolor="rgba(0,0,0,0)",
+        ),
+    )
+    return fig
+
+
+def _possession_pitch_figure(own_half_pct: float, opp_half_pct: float) -> go.Figure:
+    """
+    Football pitch with diagonal hatching. Purple colour scheme.
+    The possession split line sits at own_half_pct% of the pitch width.
+    Own half = bright purple; opponent half = dark purple.
+    """
+    import numpy as np
+
+    fig = go.Figure()
+
+    PW, PH = 100.0, 65.0
+
+    # Split line clamped to reasonable range
+    split_x = PW * max(0.20, min(0.80, own_half_pct / 100.0))
+
+    # ── Half fills ────────────────────────────────────────────────────────────
+    # Own half — bright purple
+    fig.add_shape(type="rect", x0=0, y0=0, x1=split_x, y1=PH,
+                  fillcolor="rgba(139,92,246,0.70)", line=dict(width=0))
+    # Opponent half — darker / more muted purple
+    fig.add_shape(type="rect", x0=split_x, y0=0, x1=PW, y1=PH,
+                  fillcolor="rgba(109,40,217,0.50)", line=dict(width=0))
+
+    # ── Diagonal hatch lines (same pattern both halves) ───────────────────────
+    SPACING   = 6.0
+    HATCH_COL = "rgba(255,255,255,0.18)"
+    LINE_W    = 1.1
+
+    def _clip(ax0, ay0, ax1, ay1, x_min, x_max):
+        if ax1 <= ax0:
+            return None
+        slope = (ay1 - ay0) / (ax1 - ax0)
+        if ax0 < x_min:
+            ay0 += slope * (x_min - ax0); ax0 = x_min
+        if ax1 > x_max:
+            ay1 -= slope * (ax1 - x_max); ax1 = x_max
+        return (ax0, ay0, ax1, ay1) if ax1 > ax0 else None
+
+    for xs in np.arange(-PH, PW + PH, SPACING):
+        x0_c, y0_c, x1_c, y1_c = xs, 0.0, xs + PH, PH
+        for xlo, xhi in ((0, split_x), (split_x, PW)):
+            seg = _clip(x0_c, y0_c, x1_c, y1_c, xlo, xhi)
+            if seg:
+                fig.add_shape(type="line",
+                              x0=seg[0], y0=seg[1], x1=seg[2], y1=seg[3],
+                              line=dict(color=HATCH_COL, width=LINE_W),
+                              layer="above")
+
+    # ── Pitch markings ────────────────────────────────────────────────────────
+    def _rect(x0, y0, x1, y1, lw=1.5):
+        fig.add_shape(type="rect", x0=x0, y0=y0, x1=x1, y1=y1,
+                      fillcolor="rgba(0,0,0,0)",
+                      line=dict(color="#ffffff", width=lw))
+
+    _rect(0, 0, PW, PH, lw=2.0)                                   # boundary
+
+    # Standard halfway line
+    fig.add_shape(type="line", x0=PW/2, y0=0, x1=PW/2, y1=PH,
+                  line=dict(color="#ffffff", width=1.5))
+
+    # Possession split line (thicker, slightly opaque white)
+    fig.add_shape(type="line", x0=split_x, y0=0, x1=split_x, y1=PH,
+                  line=dict(color="rgba(255,255,255,0.90)", width=2.5))
+
+    # Centre circle + spot
+    fig.add_shape(type="circle",
+                  x0=PW/2-9.15, y0=PH/2-9.15, x1=PW/2+9.15, y1=PH/2+9.15,
+                  fillcolor="rgba(0,0,0,0)", line=dict(color="#ffffff", width=1.2))
+    fig.add_trace(go.Scatter(
+        x=[PW/2], y=[PH/2], mode="markers",
+        marker=dict(color="#ffffff", size=4),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    # Penalty areas
+    pa_w, pa_h = 16.5, 40.32
+    _rect(0, (PH-pa_h)/2, pa_w, (PH+pa_h)/2, lw=1.2)
+    _rect(PW-pa_w, (PH-pa_h)/2, PW, (PH+pa_h)/2, lw=1.2)
+
+    # 6-yard boxes
+    ga_w, ga_h = 5.5, 18.32
+    _rect(0, (PH-ga_h)/2, ga_w, (PH+ga_h)/2, lw=1.2)
+    _rect(PW-ga_w, (PH-ga_h)/2, PW, (PH+ga_h)/2, lw=1.2)
+
+    # Penalty spots
+    fig.add_trace(go.Scatter(
+        x=[11.0, PW-11.0], y=[PH/2, PH/2], mode="markers",
+        marker=dict(color="#ffffff", size=3),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    apply_chart_theme(fig, "dark")
+
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        height=240, margin=dict(l=0, r=0, t=0, b=0),
+        xaxis=dict(range=[0, PW], showgrid=False, showticklabels=False,
+                   zeroline=False, fixedrange=True),
+        yaxis=dict(range=[0, PH], showgrid=False, showticklabels=False,
+                   zeroline=False, fixedrange=True, scaleanchor="x", scaleratio=1),
+    )
+    return fig
+
+
+def _possession_modal(data: dict, prefix: str = "ma") -> dbc.Modal:
+    """
+    Build the possession detail modal for the analysed team only.
+      1. Possession by 15-min bands (diverging bar chart)
+      2. Pitch possession by area (own vs opponent half)
+    No team toggle — always shows the analysed team's data.
+    """
+    m         = data.get("metrics", {})
+    home_team = data.get("home_team", "Home")
+    away_team = data.get("away_team", "Away")
+    team_name = data.get("team_name", home_team)
+
+    # Determine whether the analysed team is home or away
+    from src.team_mapping import canonical_name as _cn
+    is_home   = _cn(team_name).lower() == _cn(home_team).lower()
+    opp_name  = away_team if is_home else home_team
+
+    bands   = m.get("possession_bands",   [])
+    by_area = m.get("possession_by_area", {"own_half_pct": 0.0, "opp_half_pct": 0.0})
+    own_pct = by_area.get("own_half_pct", 0.0)
+    opp_pct = by_area.get("opp_half_pct", 0.0)
+
+    bands_fig = _possession_bands_figure(bands, team_name, opp_name)
+    pitch_fig = _possession_pitch_figure(own_pct, opp_pct)
+
+    # ── Section: Possession by Time ──────────────────────────────────────────
+    bands_section = html.Div(
+        [
+            html.H6("POSSESSION BY TIME PERIOD",
+                    style={"fontSize": "0.72rem", "fontWeight": "700",
+                           "letterSpacing": "1.4px", "color": _PURPLE,
+                           "textAlign": "center", "marginBottom": "0.75rem"}),
+            dcc.Graph(figure=bands_fig, config={"displayModeBar": False}),
+        ],
+        style={"background": "var(--bg-card)", "borderRadius": "12px",
+               "padding": "1.25rem", "marginBottom": "1rem"},
+    )
+
+    # ── Section: Possession by Area ──────────────────────────────────────────
+    area_section = html.Div(
+        [
+            html.H6("POSSESSION BY PITCH AREA",
+                    style={"fontSize": "0.72rem", "fontWeight": "700",
+                           "letterSpacing": "1.4px", "color": _PURPLE,
+                           "textAlign": "center", "marginBottom": "1rem"}),
+            html.Div(
+                [
+                    # Own half label + value
+                    html.Div(
+                        [
+                            html.Span("Own Half",
+                                      style={"fontSize": "0.8rem",
+                                             "color": "var(--text-secondary)",
+                                             "display": "block",
+                                             "textAlign": "right",
+                                             "marginBottom": "4px"}),
+                            html.Span(f"{own_pct}%",
+                                      style={"fontSize": "2rem", "fontWeight": "700",
+                                             "color": _PURPLE, "display": "block",
+                                             "textAlign": "right"}),
+                        ],
+                        style={"flex": "0 0 auto", "paddingRight": "1rem",
+                               "display": "flex", "flexDirection": "column",
+                               "justifyContent": "center"},
+                    ),
+                    # Pitch figure
+                    dcc.Graph(figure=pitch_fig, config={"displayModeBar": False},
+                              style={"flex": "1", "minWidth": "0"}),
+                    # Opponent half label + value
+                    html.Div(
+                        [
+                            html.Span("Opponent Half",
+                                      style={"fontSize": "0.8rem",
+                                             "color": "var(--text-secondary)",
+                                             "display": "block",
+                                             "textAlign": "left",
+                                             "marginBottom": "4px"}),
+                            html.Span(f"{opp_pct}%",
+                                      style={"fontSize": "2rem", "fontWeight": "700",
+                                             "color": _PURPLE_LIGHT, "display": "block",
+                                             "textAlign": "left"}),
+                        ],
+                        style={"flex": "0 0 auto", "paddingLeft": "1rem",
+                               "display": "flex", "flexDirection": "column",
+                               "justifyContent": "center"},
+                    ),
+                ],
+                style={"display": "flex", "alignItems": "center"},
+            ),
+        ],
+        style={"background": "var(--bg-card)", "borderRadius": "12px",
+               "padding": "1.25rem"},
+    )
+
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(
+                dbc.ModalTitle("Possession Detail",
+                               style={"fontSize": "1rem", "color": "#f0f0f0",
+                                      "fontWeight": "600"}),
+                close_button=True,
+                style={"backgroundColor": _MODAL_BG,
+                       "borderBottom": "1px solid rgba(255,255,255,0.1)"},
+            ),
+            dbc.ModalBody(
+                html.Div(
+                    [bands_section, area_section],
+                    style={"display": "flex", "flexDirection": "column"},
+                ),
+                style={"backgroundColor": _MODAL_BG, "padding": "1.25rem"},
+            ),
+        ],
+        id=f"{prefix}-possession-modal",
+        is_open=False,
+        scrollable=True,
+        size="lg",
+        backdrop=True,
+        style={"color": "#f0f0f0"},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # A. POSSESSION OVERVIEW
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _section_possession(m: dict) -> html.Div:
+def _section_possession(m: dict, prefix: str = "ma") -> html.Div:
     """Top-level overview: possession share + final-third entry rate + tempo."""
+    # Clickable Possession % card — opens detail modal
+    possession_kpi = html.Div(
+        [
+            html.Div(
+                html.I(className="bi bi-pie-chart-fill",
+                       style={"color": "#8b5cf6", "fontSize": "1.3rem"}),
+                className="kpi-icon",
+            ),
+            html.Div(
+                [
+                    html.Span("Possession %", className="kpi-label"),
+                    html.Span(f"{m['possession_pct']}%", className="kpi-value"),
+                    html.Span("of match possession", className="kpi-subtitle",
+                              style={"color": "#8b5cf6"}),
+                ],
+                className="kpi-text",
+            ),
+            html.I(
+                className="bi bi-box-arrow-up-right",
+                style={"fontSize": "0.65rem", "color": "rgba(255,255,255,0.25)",
+                       "position": "absolute", "top": "6px", "right": "8px"},
+            ),
+        ],
+        className="kpi-card",
+        id=f"{prefix}-possession-modal-trigger",
+        n_clicks=0,
+        style={"cursor": "pointer", "position": "relative"},
+    )
+
     return html.Div(
         [
             html.H6("Possession & Final Third Entry", className="buildup-subsection-title"),
             html.Div(
                 [
-                    _mini_kpi(
-                        "Possession %", f"{m['possession_pct']}%",
-                        "of match possession",
-                        "#8b5cf6", "bi-pie-chart-fill",
-                    ),
+                    possession_kpi,
                     _mini_kpi(
                         "Qualifying Poss.", m["qualifying_poss"],
                         "possessions ≥10 seconds",
@@ -265,6 +601,7 @@ def _section_corridor(m: dict) -> html.Div:
             textfont=dict(size=11, color="#fff"),
             hovertemplate=f"{CORRIDOR_LABELS[key]}: {counts[key]} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -337,6 +674,7 @@ def _section_methods(m: dict) -> html.Div:
             textfont=dict(size=10, color="#fff"),
             hovertemplate=f"{METHOD_LABELS[key]}: {count} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(bar_fig, "dark")
     bar_fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -552,6 +890,7 @@ def _section_outcome_by_corridor(m: dict) -> html.Div:
         textfont=dict(size=10, color="#fff"),
         hovertemplate="Negative: %{x}<extra></extra>",
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -610,6 +949,7 @@ def _section_outcome_by_method(m: dict) -> html.Div:
     ))
 
     bar_height = max(110, len(visible) * 30)
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -702,15 +1042,19 @@ def final_third_card(data: dict) -> html.Div:
     if m.get("total_ft_entries", 0) == 0 and m.get("qualifying_poss", 0) == 0:
         return html.Div(
             [
-                html.H5("Build-up to Final Third",
-                        className="buildup-card-title"),
+                ds_header(
+                    "Offensive Phase — Final Third", "bi-sign-merge-right-fill",
+                    "Build-up to Final Third",
+                    "How possessions progress into the final third — corridors, "
+                    "methods and outcomes",
+                ),
                 html.P(
                     "No qualifying possession data found for this team in this match.",
                     className="text-muted",
                     style={"padding": "2rem", "textAlign": "center"},
                 ),
             ],
-            className="buildup-card",
+            className="buildup-card ma-card",
         )
 
     sep = html.Hr(style={"borderColor": "var(--border-light)",
@@ -718,9 +1062,16 @@ def final_third_card(data: dict) -> html.Div:
 
     return html.Div(
         [
-            html.H5("Build-up to Final Third", className="buildup-card-title"),
+            ds_header(
+                "Offensive Phase — Final Third", "bi-sign-merge-right-fill",
+                "Build-up to Final Third",
+                "How possessions progress into the final third — corridors, "
+                "methods and outcomes",
+            ),
+            # Possession detail modal (toggled by the Possession % KPI card)
+            _possession_modal(data, prefix="ma"),
             # A — Possession & entry overview (incl. tempo KPIs)
-            _section_possession(m),
+            _section_possession(m, prefix="ma"),
             sep,
             # B — Corridor breakdown
             _section_corridor(m),
@@ -743,5 +1094,5 @@ def final_third_card(data: dict) -> html.Div:
             # H — Outcomes by method
             _section_outcome_by_method(m),
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
     )

@@ -157,19 +157,72 @@ _QUALIFIER_RENAMES = {
 # 1. POSSESSION STATISTICS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _compute_possession_detail(
+    team_poss: "pd.DataFrame",
+    all_poss: "pd.DataFrame",
+    overall_pct: float,
+) -> tuple[list[dict], dict]:
+    """
+    Helper: compute 15-min bands and own/opponent half split for one team.
+
+    Returns (bands, by_area) where:
+      bands   — list of {label, team_pct, opp_pct} per window + Overall
+      by_area — {own_half_pct, opp_half_pct}
+    """
+    band_edges     = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200]
+    band_labels_seq = ["15'", "30'", "45'", "60'", "75'", "90'", "45+' ", "90+' "]
+
+    bands: list[dict] = []
+    for i in range(len(band_edges) - 1):
+        bs, be = band_edges[i], band_edges[i + 1]
+
+        def _overlap(row, bs=bs, be=be):
+            s = max(row["start_sec"], bs)
+            e = min(row["end_sec"],   be)
+            return max(0.0, e - s)
+
+        team_band_time = team_poss.apply(_overlap, axis=1).sum()
+        all_band_time  = all_poss.apply(_overlap, axis=1).sum()
+
+        if all_band_time == 0:
+            continue  # no play in this window (e.g. extra-time bands in a normal match)
+
+        t_pct = round(float(team_band_time) / float(all_band_time) * 100, 1)
+        o_pct = round(100.0 - t_pct, 1)
+
+        bands.append({"label": band_labels_seq[i], "band_idx": i,
+                      "team_pct": t_pct, "opp_pct": o_pct})
+
+    bands.append({"label": "Overall", "band_idx": len(bands),
+                  "team_pct": overall_pct, "opp_pct": round(100.0 - overall_pct, 1)})
+
+    own_half_time  = team_poss[team_poss["mean_x"] < 50]["duration"].sum()
+    opp_half_time  = team_poss[team_poss["mean_x"] >= 50]["duration"].sum()
+    total_dur      = team_poss["duration"].sum() or 1.0
+
+    by_area = {
+        "own_half_pct": round(float(own_half_time) / float(total_dur) * 100, 1),
+        "opp_half_pct": round(float(opp_half_time) / float(total_dur) * 100, 1),
+    }
+    return bands, by_area
+
+
 def build_possession_stats(df: pd.DataFrame, team_lower: str) -> dict:
     """
-    Compute possession summary stats for the analysed team.
+    Compute possession summary stats for the analysed team AND the opponent.
 
     Returns dict with:
-        possession_pct       — team's share of total match possession time
-        total_team_poss      — all possessions belonging to the team
-        qualifying_poss      — team possessions lasting >= MIN_POSS_SEC
-        qualifying_poss_ids  — set of qualifying possession IDs
-        all_team_poss_ids    — set of all team possession IDs
+        possession_pct         — team's share of total match possession time
+        total_team_poss        — all possessions belonging to the team
+        qualifying_poss        — team possessions lasting >= MIN_POSS_SEC
+        qualifying_poss_ids    — set of qualifying possession IDs
+        all_team_poss_ids      — set of all team possession IDs
+        possession_bands       — list of {label, team_pct, opp_pct} per 15-min window
+        possession_by_area     — {own_half_pct, opp_half_pct} for team
+        opp_possession_bands   — same bands from the opponent's perspective
+        opp_possession_by_area — {own_half_pct, opp_half_pct} for opponent
+        opp_team_name          — canonical name of the opponent
     """
-    # Use only play events for duration to avoid non-play events (stoppages,
-    # cards, subs) inflating the possession time of the last active possession.
     play_df = df[df["event_type"].str.strip().str.lower().apply(
         lambda e: e not in NON_PLAY_EVENTS and e != ""
     )]
@@ -178,6 +231,7 @@ def build_possession_stats(df: pd.DataFrame, team_lower: str) -> dict:
         team=("poss_team_name", "first"),
         start_sec=("_match_sec", "min"),
         end_sec=("_match_sec", "max"),
+        mean_x=("x", "mean"),
     ).reset_index()
     poss_info["duration"] = (poss_info["end_sec"] - poss_info["start_sec"]).clip(lower=0)
 
@@ -185,24 +239,45 @@ def build_possession_stats(df: pd.DataFrame, team_lower: str) -> dict:
         lambda t: canonical_name(str(t).strip()).lower() == team_lower
     )
     team_poss = poss_info[team_mask]
+    opp_poss  = poss_info[~team_mask & (poss_info["team"].str.strip() != "")]
     all_poss  = poss_info
 
     total_match_time = all_poss["duration"].sum()
     total_team_time  = team_poss["duration"].sum()
+    total_opp_time   = opp_poss["duration"].sum()
 
     possession_pct = (
         round(float(total_team_time) / float(total_match_time) * 100, 1)
         if total_match_time > 0 else 0.0
     )
+    opp_possession_pct = round(100.0 - possession_pct, 1)
 
     qualifying = team_poss[team_poss["duration"] >= MIN_POSS_SEC]
 
+    # Identify opponent canonical name (most common non-team, non-empty)
+    opp_names = (
+        poss_info[~team_mask]["team"]
+        .apply(lambda t: canonical_name(str(t).strip()))
+        .replace("", pd.NA)
+        .dropna()
+    )
+    opp_name = opp_names.mode().iloc[0] if not opp_names.empty else "Opponent"
+
+    # 15-min bands + area split for both teams
+    bands, by_area         = _compute_possession_detail(team_poss, all_poss, possession_pct)
+    opp_bands, opp_by_area = _compute_possession_detail(opp_poss,  all_poss, opp_possession_pct)
+
     return {
-        "possession_pct":      possession_pct,
-        "total_team_poss":     int(len(team_poss)),
-        "qualifying_poss":     int(len(qualifying)),
-        "qualifying_poss_ids": set(qualifying["poss_id"].tolist()),
-        "all_team_poss_ids":   set(team_poss["poss_id"].tolist()),
+        "possession_pct":         possession_pct,
+        "total_team_poss":        int(len(team_poss)),
+        "qualifying_poss":        int(len(qualifying)),
+        "qualifying_poss_ids":    set(qualifying["poss_id"].tolist()),
+        "all_team_poss_ids":      set(team_poss["poss_id"].tolist()),
+        "possession_bands":       bands,
+        "possession_by_area":     by_area,
+        "opp_possession_bands":   opp_bands,
+        "opp_possession_by_area": opp_by_area,
+        "opp_team_name":          opp_name,
     }
 
 
@@ -1087,6 +1162,13 @@ def compute_ft_metrics(entries: list[dict], poss_stats: dict, box_touches: int =
 
     return {
         "possession_pct":          poss_stats["possession_pct"],
+        "possession_bands":        poss_stats.get("possession_bands", []),
+        "possession_by_area":      poss_stats.get("possession_by_area",
+                                                   {"own_half_pct": 0.0, "opp_half_pct": 0.0}),
+        "opp_possession_bands":    poss_stats.get("opp_possession_bands", []),
+        "opp_possession_by_area":  poss_stats.get("opp_possession_by_area",
+                                                   {"own_half_pct": 0.0, "opp_half_pct": 0.0}),
+        "opp_team_name":           poss_stats.get("opp_team_name", "Opponent"),
         "total_team_poss":         poss_stats["total_team_poss"],
         "qualifying_poss":         qualifying_poss,
         "possessions_with_ft_entry": poss_with_entry,
@@ -1110,6 +1192,11 @@ def compute_ft_metrics(entries: list[dict], poss_stats: dict, box_touches: int =
 def _empty_metrics() -> dict:
     return {
         "possession_pct":            0.0,
+        "possession_bands":          [],
+        "possession_by_area":        {"own_half_pct": 0.0, "opp_half_pct": 0.0},
+        "opp_possession_bands":      [],
+        "opp_possession_by_area":    {"own_half_pct": 0.0, "opp_half_pct": 0.0},
+        "opp_team_name":             "Opponent",
         "total_team_poss":           0,
         "qualifying_poss":           0,
         "possessions_with_ft_entry": 0,
@@ -1160,11 +1247,25 @@ def analyse_final_third(
         metrics      — flat dict of aggregated metrics
         entries      — list of per-entry dicts
         debug_events — list of lightweight debug records
+        home_team    — canonical home team name (from filename)
+        away_team    — canonical away team name (from filename)
+        team_name    — the analysed team name
     """
+    from src.utils.paths import parse_match_filename
+    from src.team_mapping import canonical_name as _cn
+
+    _info      = parse_match_filename(match_csv)
+    home_team  = _cn(_info.get("home", ""))
+    away_team  = _cn(_info.get("away", ""))
+
     df = _load_match_events(match_csv)
     if df.empty:
         log.warning("Empty match data for %s", match_csv)
-        return {"metrics": _empty_metrics(), "entries": [], "debug_events": []}
+        return {
+            "metrics": _empty_metrics(), "entries": [], "debug_events": [],
+            "home_team": home_team, "away_team": away_team,
+            "team_name": canonical_name(team_name.strip()),
+        }
 
     # ── Apply qualifier renames (only if not already renamed) ──
     for orig, new in _QUALIFIER_RENAMES.items():
@@ -1244,4 +1345,7 @@ def analyse_final_third(
         "metrics":      metrics,
         "entries":      entries,
         "debug_events": debug,
+        "home_team":    home_team,
+        "away_team":    away_team,
+        "team_name":    canonical_name(team_name.strip()),
     }

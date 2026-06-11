@@ -7,7 +7,7 @@ from dash import html
 from src.team_mapping import logo_url, team_slug
 
 
-def team_card(team_name: str) -> html.A:
+def team_card(team_name: str, season: str = "") -> html.A:
     """
     Create a clickable team card with logo and name.
 
@@ -15,12 +15,16 @@ def team_card(team_name: str) -> html.A:
     ----------
     team_name : str
         Canonical team display name (e.g. "Bologna", "Inter")
+    season : str, optional
+        Season key (e.g. "2025_2026") — appended as ?season= query param so
+        the Team Detail page opens pre-filtered to the same season.
 
     Returns
     -------
     html.A — clickable card linking to /serie-a/team/<slug>
     """
     slug = team_slug(team_name)
+    href = f"/serie-a/team/{slug}?season={season}" if season else f"/serie-a/team/{slug}"
     return html.A(
         html.Div(
             [
@@ -33,7 +37,7 @@ def team_card(team_name: str) -> html.A:
             ],
             className="team-card",
         ),
-        href=f"/serie-a/team/{slug}",
+        href=href,
         className="team-card-link",
     )
 

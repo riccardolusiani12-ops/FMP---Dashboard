@@ -17,14 +17,20 @@ from __future__ import annotations
 from dash import html, dcc
 import plotly.graph_objects as go
 
-# ── Progression palette ─────────────────────────────────────────────────────
+from src.styling.theme import SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.ui_components import ds_header
+
+# ── Progression palette — bound to the shared FT entry-method taxonomy
+# (SEMANTIC_COLORS method_*; values unchanged) so progression categories match
+# the Final Third card's colours for the same concepts. ─────────────────────
 PROG_COLORS = {
-    "through_ball":     "#f43f5e",   # rose
-    "long_ball":        "#f97316",   # orange
-    "recovery_fast":    "#22c55e",   # green
-    "individual_carry": "#eab308",   # amber
-    "short_passing":    "#3b82f6",   # blue
-    "other":            "#6b7280",   # grey
+    "through_ball":     SEMANTIC_COLORS["method_through_ball"],         # rose
+    "long_ball":        SEMANTIC_COLORS["method_long_ball"],            # orange
+    "recovery_fast":    SEMANTIC_COLORS["method_transition_recovery"],  # green
+    "individual_carry": SEMANTIC_COLORS["method_individual_carry"],     # amber
+    "short_passing":    SEMANTIC_COLORS["method_short_pass"],           # blue
+    "other":            SEMANTIC_COLORS["method_other"],                # grey
 }
 
 PROG_LABELS = {
@@ -138,6 +144,7 @@ def _section_origin(m: dict) -> html.Div:
             textfont=dict(size=11, color="#fff"),
             hovertemplate=f"{label}: {count} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -192,6 +199,7 @@ def _section_progression(m: dict) -> html.Div:
                 f"{PROG_LABELS[key]}: {count} ({pct}%)<extra></extra>"
             ),
         ))
+    apply_chart_theme(bar_fig, "dark")
     bar_fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -360,19 +368,25 @@ def general_buildup_card(data: dict) -> html.Div:
     """
     m = data.get("metrics", {})
 
+    _header = ds_header(
+        "Build-up — General", "bi-arrow-up-right-circle",
+        "General Build-up — Open Play",
+        "Open-play progression into the middle third — origins, methods and "
+        "what follows",
+    )
+
     if (m.get("total_z3_entries", 0) == 0
             and m.get("total_open_possessions", 0) == 0):
         return html.Div(
             [
-                html.H5("General Build-up — Open Play",
-                         className="buildup-card-title"),
+                _header,
                 html.P(
                     "No open-play possessions found for this team in this match.",
                     className="text-muted",
                     style={"padding": "2rem", "textAlign": "center"},
                 ),
             ],
-            className="buildup-card",
+            className="buildup-card ma-card",
         )
 
     sep = html.Hr(style={"borderColor": "var(--border-light)",
@@ -380,8 +394,7 @@ def general_buildup_card(data: dict) -> html.Div:
 
     return html.Div(
         [
-            html.H5("General Build-up — Open Play",
-                     className="buildup-card-title"),
+            _header,
             # A — Frequency
             _section_frequency(m),
             sep,
@@ -397,5 +410,5 @@ def general_buildup_card(data: dict) -> html.Div:
             # E — Extra metrics
             _section_extras(m),
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
     )

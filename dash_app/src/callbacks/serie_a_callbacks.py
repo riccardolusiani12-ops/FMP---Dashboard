@@ -33,4 +33,5 @@ def register_serie_a_callbacks(app):
                 className="text-muted",
             )
 
-        return [team_card(t) for t in teams]
+        # Pass selected season so Team Detail page opens pre-filtered
+        return [team_card(t, season=season) for t in teams]

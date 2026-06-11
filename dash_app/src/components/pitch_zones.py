@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
+from src.styling.theme import SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+
 from src.config import PRIMARY_COLOR
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -23,10 +26,10 @@ Y_EDGES = [0, 33.33, 66.67, 100.0]
 # Zone numbering: Z1 = row0-col0, Z2 = row0-col1, Z3 = row0-col2, etc.
 ZONE_LABELS = {r * COLS + c + 1: f"Z{r * COLS + c + 1}" for r in range(ROWS) for c in range(COLS)}
 
-# Outcome colours (same semantic used everywhere)
+# Outcome colours (same semantic used everywhere — bound to the design system)
 OUTCOME_COLORS = {
-    "positive": "#22c55e",   # green  — possession kept >= 15 s
-    "negative": "#ef4444",   # red    — possession lost within 15 s
+    "positive": SEMANTIC_COLORS["outcome_positive"],   # green — possession kept >= 15 s
+    "negative": SEMANTIC_COLORS["outcome_negative"],   # red   — possession lost within 15 s
 }
 
 
@@ -74,7 +77,10 @@ def pitch_zone_figure(
         count = zone_counts.get(zone_num, 0)
         intensity = count / max_count if max_count else 0
 
-        # Zone fill colour (dark navy → primary red based on frequency)
+        # Zone fill colour (dark navy → primary red based on frequency) —
+        # the dashboard's unified sequential ramp (encoded as
+        # SEMANTIC_COLORS["heatmap_colorscale"]; same interpolation as the
+        # Phase 2a pressing/castle zone heatmaps)
         fill_r = int(27 + (138 - 27) * intensity)
         fill_g = int(40 + (31 - 40) * intensity)
         fill_b = int(56 + (51 - 56) * intensity)
@@ -160,6 +166,8 @@ def pitch_zone_figure(
         showarrow=False,
         font=dict(size=9, color="rgba(255,255,255,0.35)"),
     )
+
+    apply_chart_theme(fig, "dark")
 
     fig.update_layout(
         title=dict(text=title, font=dict(size=13, color="#f0f0f0"), x=0.5),

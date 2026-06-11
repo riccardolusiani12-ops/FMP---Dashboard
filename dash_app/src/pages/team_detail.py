@@ -10,6 +10,21 @@ from dash import dcc, html
 from src.config import AVAILABLE_SEASONS
 
 
+def _ds_header(eyebrow: str, icon: str, title: str, subtitle: str) -> html.Div:
+    """House-style card header: uppercase eyebrow + icon, bold title, muted subtitle."""
+    return html.Div(
+        [
+            html.Div(
+                [html.I(className=f"bi {icon}"), html.Span(eyebrow)],
+                className="ds-eyebrow",
+            ),
+            html.H4(title, className="ds-title"),
+            html.P(subtitle, className="ds-sub"),
+        ],
+        className="ds-header",
+    )
+
+
 def layout(team_name: str = "", season: str = "") -> html.Div:
     """Return the team detail page layout."""
     # Default to the latest season
@@ -23,7 +38,7 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
 
     return html.Div(
         [
-            # Page header: Back | Logo | Team name | Season dropdown
+            # Page header: Back | Logo | Team name
             html.Div(
                 [
                     html.A(
@@ -48,19 +63,14 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                         ],
                         className="team-detail-header-info",
                     ),
-                    # Season selector in header
-                    html.Div(
-                        [
-                            html.Label("Season", className="filter-label"),
-                            dcc.Dropdown(
-                                id="team-season-selector",
-                                options=season_options,
-                                value=default_season,
-                                clearable=False,
-                                className="season-dropdown",
-                            ),
-                        ],
-                        className="season-filter",
+                    # Hidden season store — season pills and URL param write here;
+                    # all detail-page callbacks read from this single source of truth.
+                    dcc.Dropdown(
+                        id="team-season-selector",
+                        options=season_options,
+                        value=default_season,
+                        clearable=False,
+                        style={"display": "none"},
                     ),
                 ],
                 className="page-header team-detail-page-header",
@@ -78,15 +88,16 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                     # Section: Points Progression
                     html.Div(
                         [
+                            _ds_header(
+                                "Season Trends", "bi-graph-up",
+                                "Points Progression",
+                                "Cumulative points by matchday — all seasons, "
+                                "selected season highlighted",
+                            ),
+                            # Season selector pills (mirror the header dropdown)
                             html.Div(
-                                [
-                                    html.I(className="bi bi-graph-up me-2"),
-                                    html.H4(
-                                        "Points Progression",
-                                        className="section-title mb-0",
-                                    ),
-                                ],
-                                className="section-header",
+                                id="season-pills-row",
+                                className="season-pills-row",
                             ),
                             dcc.Loading(
                                 dcc.Graph(
@@ -103,6 +114,44 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                                 type="circle",
                                 color="#8a1f33",
                             ),
+                            # Static zone legend below the chart
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            html.Span(
+                                                className="standings-legend-swatch",
+                                                style={"backgroundColor": "#0E1E5B"},
+                                            ),
+                                            html.Span("CHAMPIONS LEAGUE", className="standings-legend-label"),
+                                        ],
+                                        className="standings-legend-item",
+                                    ),
+                                    html.Div(className="standings-legend-divider"),
+                                    html.Div(
+                                        [
+                                            html.Span(
+                                                className="standings-legend-swatch",
+                                                style={"backgroundColor": "#F47E01"},
+                                            ),
+                                            html.Span("EUROPA / CONFERENCE", className="standings-legend-label"),
+                                        ],
+                                        className="standings-legend-item",
+                                    ),
+                                    html.Div(className="standings-legend-divider"),
+                                    html.Div(
+                                        [
+                                            html.Span(
+                                                className="standings-legend-swatch",
+                                                style={"backgroundColor": "#FF1A1A"},
+                                            ),
+                                            html.Span("RELEGATION", className="standings-legend-label"),
+                                        ],
+                                        className="standings-legend-item",
+                                    ),
+                                ],
+                                className="standings-zone-legend",
+                            ),
                         ],
                         className="chart-section",
                     ),
@@ -110,15 +159,10 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                     # Section: Pressing Intensity (PPDA)
                     html.Div(
                         [
-                            html.Div(
-                                [
-                                    html.I(className="bi bi-speedometer2 me-2"),
-                                    html.H4(
-                                        "Pressing Intensity",
-                                        className="section-title mb-0",
-                                    ),
-                                ],
-                                className="section-header",
+                            _ds_header(
+                                "Pressing", "bi-speedometer2",
+                                "Pressing Intensity",
+                                "PPDA ranking and field tilt vs the rest of the league",
                             ),
                             # PPDA KPI row
                             html.Div(
@@ -174,15 +218,11 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                     # Section: Most-Used Formations
                     html.Div(
                         [
-                            html.Div(
-                                [
-                                    html.I(className="bi bi-diagram-3-fill me-2"),
-                                    html.H4(
-                                        "Most-Used Formations",
-                                        className="section-title mb-0",
-                                    ),
-                                ],
-                                className="section-header",
+                            _ds_header(
+                                "Tactical Setup", "bi-diagram-3-fill",
+                                "Most-Used Formations",
+                                "Starting shapes used three or more times — "
+                                "click a card to see the squad",
                             ),
                             dcc.Loading(
                                 html.Div(
@@ -211,15 +251,10 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                     # Section: Goals & xG
                     html.Div(
                         [
-                            html.Div(
-                                [
-                                    html.I(className="bi bi-crosshair me-2"),
-                                    html.H4(
-                                        "Offensive Production and Defensive Efficiency",
-                                        className="section-title mb-0",
-                                    ),
-                                ],
-                                className="section-header",
+                            _ds_header(
+                                "Performance", "bi-crosshair",
+                                "Offensive Production and Defensive Efficiency",
+                                "Goals scored and conceded against their expected (xG) values",
                             ),
                             dcc.Loading(
                                 html.Div(
@@ -236,15 +271,10 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                     # Section: Goal Distribution by 15-Minute Windows
                     html.Div(
                         [
-                            html.Div(
-                                [
-                                    html.I(className="bi bi-clock-history me-2"),
-                                    html.H4(
-                                        "Goals by 15-Minute Intervals",
-                                        className="section-title mb-0",
-                                    ),
-                                ],
-                                className="section-header",
+                            _ds_header(
+                                "Timing", "bi-clock-history",
+                                "Goals by 15-Minute Intervals",
+                                "When goals are scored and conceded across the match",
                             ),
                             dcc.Loading(
                                 html.Div(
@@ -272,7 +302,9 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                 className="team-charts-container",
             ),
         ],
-        className="page-container",
+        # "team-overview" scopes the Phase 1 design-system restyle to this page
+        # (.kpi-card etc. are shared classes — see REDESIGN_TRACKER.md Phase 1).
+        className="page-container team-overview",
     )
 
 

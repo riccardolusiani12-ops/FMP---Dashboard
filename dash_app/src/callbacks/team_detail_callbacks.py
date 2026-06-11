@@ -16,6 +16,8 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
 from src.team_mapping import logo_url
+from src.styling.theme import SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
 from src.analytics.multi_season_standings import build_standings_figure
 from src.analytics.ppda import build_ppda_bar_figure, build_ppda_scatter_figure
 from src.analytics.formations import build_formation_pitch_figure
@@ -32,6 +34,18 @@ from src.analytics.data_loader import (
     load_goal_distribution,
     load_team_average_age,
 )
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """'#22c55e' → (34, 197, 94) — for building rgba() intensity fills."""
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+# Harmonised good/bad pair used across this page's KPI cards, form badges,
+# goal tiles and goals-vs-xG bars (Phase 1: was #00CC96 / #EF553B).
+_GREEN = SEMANTIC_COLORS["goals_scored"]     # "#22c55e"
+_RED = SEMANTIC_COLORS["goals_conceded"]     # "#ef4444"
 
 
 def register_team_detail_callbacks(app):
@@ -63,14 +77,65 @@ def register_team_detail_callbacks(app):
         # Load all-season progression from precomputed Parquet
         progression = load_all_points_progression()
 
+        # Official final/current rank for the highlighted season — feeds the
+        # end-of-line position badge (presentation only).
+        final_pos = None
+        if team and selected_season:
+            standings = load_standings(selected_season)
+            if not standings.empty:
+                trow = standings[standings["Team"] == team]
+                if not trow.empty and "Rank" in trow.columns:
+                    final_pos = _ordinal(int(trow.iloc[0]["Rank"]))
+
         highlight = selected_season.replace("_", "/") if selected_season else ""
         fig = build_standings_figure(
             progression,
             team=team,
             highlight_season=highlight,
             theme=theme or "dark",
+            final_position=final_pos,
         )
         return fig
+
+    # ── 2b. Season selector pills (mirror of the header dropdown) ──
+    @app.callback(
+        Output("season-pills-row", "children"),
+        Input("team-season-selector", "value"),
+        prevent_initial_call=False,
+    )
+    def update_season_pills(selected_season: str):
+        """Render one pill per season; the selected one is accent-filled."""
+        from src.config import AVAILABLE_SEASONS
+        pills = []
+        for s in AVAILABLE_SEASONS:
+            active = (s == selected_season)
+            pills.append(
+                html.Button(
+                    s.replace("_", "/"),
+                    id={"type": "season-pill", "index": s},
+                    className=(
+                        "season-pill season-pill--active" if active
+                        else "season-pill"
+                    ),
+                    n_clicks=0,
+                )
+            )
+        return pills
+
+    @app.callback(
+        Output("team-season-selector", "value"),
+        Input({"type": "season-pill", "index": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def select_season_pill(n_clicks_list):
+        """Pill click → set the existing season dropdown value (single source
+        of truth), so every season-driven callback fires exactly as before."""
+        if not n_clicks_list or not any(n_clicks_list):
+            return no_update
+        triggered = ctx.triggered_id
+        if not triggered:
+            return no_update
+        return triggered["index"]
 
     # ── 3. KPIs: react to season selector ──
     @app.callback(
@@ -98,6 +163,7 @@ def register_team_detail_callbacks(app):
         if standings.empty:
             return [
                 _kpi_card("Position", "–", "bi-trophy-fill", "#636EFA"),
+                _record_card(0, 0, 0, empty=True),
                 _form_card([]),
                 _kpi_card("Goal Diff.", "–", "bi-bullseye", "#FFA15A"),
                 _kpi_card("PPG", "–", "bi-star-fill", "#19D3F3"),
@@ -108,6 +174,7 @@ def register_team_detail_callbacks(app):
         if team_row.empty:
             return [
                 _kpi_card("Position", "–", "bi-trophy-fill", "#636EFA"),
+                _record_card(0, 0, 0, empty=True),
                 _form_card([]),
                 _kpi_card("Goal Diff.", "–", "bi-bullseye", "#FFA15A"),
                 _kpi_card("PPG", "–", "bi-star-fill", "#19D3F3"),
@@ -126,26 +193,31 @@ def register_team_detail_callbacks(app):
         ppg = pts / mp if mp > 0 else 0.0
         ppg_str = f"{ppg:.2f}"
         # Color: green if >= 2.0, orange if >= 1.3, red otherwise
-        ppg_color = "#00CC96" if ppg >= 2.0 else ("#FFA15A" if ppg >= 1.3 else "#EF553B")
+        ppg_color = _GREEN if ppg >= 2.0 else ("#FFA15A" if ppg >= 1.3 else _RED)
 
         # Last 5 results from precomputed progression
         last_5 = _get_last_5(team, season_key)
 
         # Goal difference color
-        gd_color = "#00CC96" if gd > 0 else ("#EF553B" if gd < 0 else "#8899aa")
+        gd_color = _GREEN if gd > 0 else (_RED if gd < 0 else "#8899aa")
 
         # Mean Age from Transfermarkt scrape
         avg_age = load_team_average_age(team, season_key)
         if avg_age is not None:
             age_str = f"{avg_age:.1f}"
             # Color: green if < 26 (young), orange if 26-28 (balanced), red if > 28 (old)
-            age_color = "#00CC96" if avg_age < 26 else ("#FFA15A" if avg_age <= 28 else "#EF553B")
+            age_color = _GREEN if avg_age < 26 else ("#FFA15A" if avg_age <= 28 else _RED)
         else:
             age_str = "–"
             age_color = "#8899aa"
 
+        w = int(row["W"]) if "W" in row.index else 0
+        d = int(row["D"]) if "D" in row.index else 0
+        l = int(row["L"]) if "L" in row.index else 0
+
         kpis = [
             _kpi_card("Position", pos_str, "bi-trophy-fill", "#636EFA"),
+            _record_card(w, d, l),
             _form_card(last_5),
             _kpi_card("Goal Diff.", f"{gd:+d}", "bi-bullseye", gd_color),
             _kpi_card("PPG", ppg_str, "bi-star-fill", ppg_color),
@@ -199,12 +271,66 @@ def register_team_detail_callbacks(app):
             className="kpi-card",
         )
 
+    def _record_card(w: int, d: int, l: int, empty: bool = False) -> html.Div:
+        """Create the Season Record KPI card showing W · D · L with letter labels."""
+        icon_color = _GREEN if (not empty and w > l) else (_RED if (not empty and l > w) else "#8899aa")
+
+        if empty:
+            record_content = html.Span("–", className="kpi-value", style={"color": "#8899aa"})
+        else:
+            record_content = html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span(str(w), className="record-num", style={"color": _GREEN}),
+                            html.Span("W", className="record-ltr"),
+                        ],
+                        className="record-cell",
+                    ),
+                    html.Span("·", className="record-dot"),
+                    html.Div(
+                        [
+                            html.Span(str(d), className="record-num", style={"color": "#8899aa"}),
+                            html.Span("D", className="record-ltr"),
+                        ],
+                        className="record-cell",
+                    ),
+                    html.Span("·", className="record-dot"),
+                    html.Div(
+                        [
+                            html.Span(str(l), className="record-num", style={"color": _RED}),
+                            html.Span("L", className="record-ltr"),
+                        ],
+                        className="record-cell",
+                    ),
+                ],
+                className="record-row",
+            )
+
+        return html.Div(
+            [
+                html.Div(
+                    html.I(className="bi bi-clipboard-data-fill"),
+                    className="kpi-icon",
+                    style={"color": icon_color},
+                ),
+                html.Div(
+                    [
+                        html.Span("Season Record", className="kpi-label"),
+                        record_content,
+                    ],
+                    className="kpi-text",
+                ),
+            ],
+            className="kpi-card",
+        )
+
     def _form_card(results: list[str]) -> html.Div:
         """Create the Last 5 Form KPI card with colored badges."""
         color_map = {
-            "W": "#00CC96",  # green
+            "W": _GREEN,  # green
             "D": "#8899aa",  # grey
-            "L": "#EF553B",  # red
+            "L": _RED,  # red
         }
 
         if not results:
@@ -308,18 +434,18 @@ def register_team_detail_callbacks(app):
 
         # Rank string
         rank_str = f"{_ordinal(rank)}"
-        rank_color = "#00CC96" if rank <= total * 0.33 else (
-            "#FFA15A" if rank <= total * 0.66 else "#EF553B"
+        rank_color = _GREEN if rank <= total * 0.33 else (
+            "#FFA15A" if rank <= total * 0.66 else _RED
         )
 
         # PPDA value
         ppda_str = f"{ppda_val:.2f}"
-        ppda_color = "#00CC96" if ppda_val < ppda_df["PPDA"].median() else "#EF553B"
+        ppda_color = _GREEN if ppda_val < ppda_df["PPDA"].median() else _RED
 
         # Field Tilt percentage
         if field_tilt is not None and not (isinstance(field_tilt, float) and field_tilt != field_tilt):
             tilt_str = f"{field_tilt:.1f}%"
-            tilt_color = "#00CC96" if field_tilt > ppda_df["field_tilt"].median() else "#FFA15A"
+            tilt_color = _GREEN if field_tilt > ppda_df["field_tilt"].median() else "#FFA15A"
         else:
             tilt_str = "–"
             tilt_color = "#8899aa"
@@ -328,7 +454,7 @@ def register_team_detail_callbacks(app):
         percentile = (1 - (rank - 1) / max(total - 1, 1)) * 100
         if percentile >= 80:
             tier = "Elite"
-            tier_color = "#00CC96"
+            tier_color = _GREEN
         elif percentile >= 60:
             tier = "High"
             tier_color = "#19D3F3"
@@ -337,10 +463,10 @@ def register_team_detail_callbacks(app):
             tier_color = "#FFA15A"
         elif percentile >= 20:
             tier = "Low"
-            tier_color = "#EF553B"
+            tier_color = _RED
         else:
             tier = "Passive"
-            tier_color = "#EF553B"
+            tier_color = _RED
 
         return [
             _kpi_card("PPDA Rank", rank_str, "bi-bar-chart-steps", rank_color),
@@ -634,17 +760,17 @@ def register_team_detail_callbacks(app):
         kpi_cards = html.Div(
             [
                 _stat_card("Goals Scored", str(gf), f"xG: {xg_val:.1f}",
-                           "bi-bullseye", "#00CC96"),
+                           "bi-bullseye", _GREEN),
                 _stat_card("Goals Conceded", str(ga), f"xGC: {xgc_val:.1f}",
-                           "bi-shield-x", "#EF553B"),
+                           "bi-shield-x", _RED),
                 _stat_card("xG", f"{xg_val:.1f}",
                            f"{'↑' if xg_over >= 0 else '↓'} {abs(xg_over):.1f} vs actual",
                            "bi-graph-up-arrow",
-                           "#00CC96" if xg_over >= 0 else "#FFA15A"),
+                           _GREEN if xg_over >= 0 else "#FFA15A"),
                 _stat_card("xGC", f"{xgc_val:.1f}",
                            f"{'↑' if xgc_over > 0 else '↓'} {abs(xgc_over):.1f} vs actual",
                            "bi-graph-down-arrow",
-                           "#00CC96" if xgc_over <= 0 else "#EF553B"),
+                           _GREEN if xgc_over <= 0 else _RED),
             ],
             className="goals-xg-kpi-row",
         )
@@ -679,8 +805,8 @@ def register_team_detail_callbacks(app):
 
         return html.Div(
             [
-                _stat_card("Goals Scored", str(gf), "", "bi-bullseye", "#00CC96"),
-                _stat_card("Goals Conceded", str(ga), "", "bi-shield-x", "#EF553B"),
+                _stat_card("Goals Scored", str(gf), "", "bi-bullseye", _GREEN),
+                _stat_card("Goals Conceded", str(ga), "", "bi-shield-x", _RED),
                 html.Div(
                     [
                         html.I(className="bi bi-info-circle me-1",
@@ -730,56 +856,47 @@ def register_team_detail_callbacks(app):
         actual_vals = [gf, ga]
         expected_vals = [xg, xgc]
 
+        green_rgb = _hex_to_rgb(_GREEN)
+        red_rgb = _hex_to_rgb(_RED)
+
         fig = go.Figure()
 
         fig.add_trace(go.Bar(
             x=categories,
             y=actual_vals,
             name="Actual",
-            marker_color=["#00CC96", "#EF553B"],
+            marker_color=[_GREEN, _RED],
             text=[str(v) for v in actual_vals],
             textposition="outside",
-            textfont=dict(color="white", size=13, family="Inter"),
+            textfont=dict(size=13),
         ))
 
         fig.add_trace(go.Bar(
             x=categories,
             y=expected_vals,
             name="Expected (xG)",
-            marker_color=["rgba(0,204,150,0.35)", "rgba(239,85,59,0.35)"],
+            marker_color=[
+                f"rgba({green_rgb[0]},{green_rgb[1]},{green_rgb[2]},0.35)",
+                f"rgba({red_rgb[0]},{red_rgb[1]},{red_rgb[2]},0.35)",
+            ],
             marker_line=dict(
-                color=["#00CC96", "#EF553B"],
+                color=[_GREEN, _RED],
                 width=2,
             ),
             text=[f"{v:.1f}" for v in expected_vals],
             textposition="outside",
-            textfont=dict(color="white", size=13, family="Inter"),
+            textfont=dict(size=13),
         ))
 
+        # Shared design-system theming first (fonts, transparent backgrounds,
+        # gridlines, legend, hover), chart specifics on top. Built dark; the
+        # client-side theme observer re-patches colours on light toggle.
+        apply_chart_theme(fig, "dark")
         fig.update_layout(
-            template="plotly_dark",
-            title=dict(
-                text=f"Goals vs Expected Goals — {team}",
-                font=dict(size=15, color="white"),
-            ),
+            title=dict(text=f"Goals vs Expected Goals — {team}"),
             barmode="group",
-            paper_bgcolor="#1b2838",
-            plot_bgcolor="#1b2838",
-            xaxis=dict(
-                tickfont=dict(size=12, color="white"),
-                gridcolor="rgba(255,255,255,0.06)",
-            ),
-            yaxis=dict(
-                title="Count",
-                gridcolor="rgba(255,255,255,0.06)",
-                tickfont=dict(size=11, color="white"),
-            ),
-            legend=dict(
-                font=dict(size=11, color="white"),
-                bgcolor="rgba(0,0,0,0.3)",
-                bordercolor="rgba(255,255,255,0.1)",
-                borderwidth=1,
-            ),
+            xaxis=dict(tickfont=dict(size=12), showgrid=False),
+            yaxis=dict(title="Count", tickfont=dict(size=11)),
             height=360,
             margin=dict(t=60, l=50, r=30, b=50),
         )
@@ -830,6 +947,13 @@ def register_team_detail_callbacks(app):
         dist_df, team: str
     ) -> html.Div:
         """Build the 15-minute goal distribution visual card."""
+        # Semantic colours from the design system (values unchanged, hues
+        # harmonised with the rest of the dashboard — see theme.py).
+        scored_hex = SEMANTIC_COLORS["goals_scored"]
+        conceded_hex = SEMANTIC_COLORS["goals_conceded"]
+        scored_rgb = _hex_to_rgb(scored_hex)
+        conceded_rgb = _hex_to_rgb(conceded_hex)
+
         scored_vals = dist_df["scored"].tolist()
         conceded_vals = dist_df["conceded"].tolist()
         bins = dist_df["bin"].tolist()
@@ -867,7 +991,7 @@ def register_team_detail_callbacks(app):
                     ],
                     className="gd-tile",
                     style={
-                        "backgroundColor": f"rgba(0, 204, 150, {intensity:.2f})",
+                        "backgroundColor": f"rgba({scored_rgb[0]}, {scored_rgb[1]}, {scored_rgb[2]}, {intensity:.2f})",
                     },
                     title=f"{b}: {val} goal{'s' if val != 1 else ''} scored"
                           + (f" ({pct_str})" if pct_str else ""),
@@ -901,7 +1025,7 @@ def register_team_detail_callbacks(app):
                     ],
                     className="gd-tile",
                     style={
-                        "backgroundColor": f"rgba(239, 85, 59, {intensity:.2f})",
+                        "backgroundColor": f"rgba({conceded_rgb[0]}, {conceded_rgb[1]}, {conceded_rgb[2]}, {intensity:.2f})",
                     },
                     title=f"{b}: {val} goal{'s' if val != 1 else ''} conceded"
                           + (f" ({pct_str})" if pct_str else ""),
@@ -913,7 +1037,7 @@ def register_team_detail_callbacks(app):
             [
                 html.Span(
                     f"{total_scored} scored",
-                    style={"color": "#00CC96", "fontWeight": "600"},
+                    style={"color": scored_hex, "fontWeight": "600"},
                 ),
                 html.Span(
                     " · ",
@@ -921,7 +1045,7 @@ def register_team_detail_callbacks(app):
                 ),
                 html.Span(
                     f"{total_conceded} conceded",
-                    style={"color": "#EF553B", "fontWeight": "600"},
+                    style={"color": conceded_hex, "fontWeight": "600"},
                 ),
                 html.Span(
                     f" · {total_scored + total_conceded} total goals",
@@ -940,12 +1064,12 @@ def register_team_detail_callbacks(app):
                             [
                                 html.I(
                                     className="bi bi-bullseye",
-                                    style={"color": "#00CC96", "fontSize": "1rem"},
+                                    style={"color": scored_hex, "fontSize": "1rem"},
                                 ),
                                 html.Span(
                                     "Scored",
                                     className="gd-row-label",
-                                    style={"color": "#00CC96"},
+                                    style={"color": scored_hex},
                                 ),
                             ],
                             className="gd-row-header",
@@ -961,12 +1085,12 @@ def register_team_detail_callbacks(app):
                             [
                                 html.I(
                                     className="bi bi-shield-x",
-                                    style={"color": "#EF553B", "fontSize": "1rem"},
+                                    style={"color": conceded_hex, "fontSize": "1rem"},
                                 ),
                                 html.Span(
                                     "Conceded",
                                     className="gd-row-label",
-                                    style={"color": "#EF553B"},
+                                    style={"color": conceded_hex},
                                 ),
                             ],
                             className="gd-row-header",

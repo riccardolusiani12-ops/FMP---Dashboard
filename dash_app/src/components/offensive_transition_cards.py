@@ -22,15 +22,24 @@ from __future__ import annotations
 from dash import html, dcc
 import plotly.graph_objects as go
 
+from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.pitch_utils import draw_pitch
+from src.styling.ui_components import ds_header
+
 # ══════════════════════════════════════════════════════════════════════════════
-# PALETTE
+# PALETTE — bound to the shared design system (values unchanged, see theme.py)
 # ══════════════════════════════════════════════════════════════════════════════
 
-PRIMARY          = "#8a1f33"
-SUCCESS_COLOR    = "#22c55e"
-TRANSITION_COLOR = "#22c55e"   # green for offensive transitions
+PRIMARY          = COLORS_DARK["accent"]                 # "#8a1f33"
+SUCCESS_COLOR    = SEMANTIC_COLORS["outcome_positive"]   # "#22c55e"
+TRANSITION_COLOR = SEMANTIC_COLORS["outcome_positive"]   # green for offensive transitions
 
-CORRIDOR_COLORS = {"L": "#3b82f6", "C": "#8b5cf6", "R": "#06b6d4"}
+CORRIDOR_COLORS = {
+    "L": SEMANTIC_COLORS["corridor_left"],
+    "C": SEMANTIC_COLORS["corridor_centre"],
+    "R": SEMANTIC_COLORS["corridor_right"],
+}
 CORRIDOR_LABELS = {"L": "Left", "C": "Centre", "R": "Right"}
 
 ZONE_GROUP_LABELS = {
@@ -41,9 +50,9 @@ ZONE_GROUP_LABELS = {
 
 # P1 (mildest) → P3 (most dangerous / best quality)
 OUTCOME_COLORS = {
-    "P1": "#86efac",   # light green
-    "P2": "#22c55e",   # green
-    "P3": "#15803d",   # dark green
+    "P1": SEMANTIC_COLORS["transition_p1"],   # light green
+    "P2": SEMANTIC_COLORS["transition_p2"],   # green
+    "P3": SEMANTIC_COLORS["transition_p3"],   # dark green
 }
 
 OUTCOME_LABELS = {
@@ -82,80 +91,10 @@ def _mini_kpi(label: str, value, subtitle: str, color: str, icon: str) -> html.D
     )
 
 
-def _draw_full_pitch(fig: go.Figure) -> None:
-    """Full-pitch markings — identical style to defensive_structure_cards."""
-    fig.add_shape(
-        type="rect", x0=0, x1=100, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.35)", width=1.5),
-        fillcolor="rgba(0,0,0,0)", layer="below",
-    )
-    for y_val in (33.33, 66.67):
-        fig.add_shape(
-            type="line", x0=0, x1=100, y0=y_val, y1=y_val,
-            line=dict(color="rgba(255,255,255,0.10)", width=1), layer="below",
-        )
-    for x_val in _X_EDGES[1:-1]:
-        fig.add_shape(
-            type="line", x0=x_val, x1=x_val, y0=0, y1=100,
-            line=dict(color="rgba(255,255,255,0.07)", width=1), layer="below",
-        )
-    # Halfway line
-    fig.add_shape(
-        type="line", x0=50, x1=50, y0=0, y1=100,
-        line=dict(color="rgba(255,255,255,0.22)", width=1, dash="dash"),
-        layer="below",
-    )
-    # Own penalty box
-    fig.add_shape(
-        type="rect", x0=0, x1=16.5, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-    # Attacking penalty box
-    fig.add_shape(
-        type="rect", x0=83.5, x1=100, y0=21, y1=79,
-        line=dict(color="rgba(255,255,255,0.18)", width=1),
-        fillcolor="rgba(0,0,0,0)",
-    )
-    fig.add_annotation(
-        x=94, y=-6, text="ATK \u2192", showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.30)"),
-    )
-    fig.add_annotation(
-        x=6, y=-6, text="\u2190 OWN GOAL", showarrow=False,
-        font=dict(size=9, color="rgba(255,255,255,0.30)"),
-    )
-    for label, y_centre in (("Right", 16.67), ("Centre", 50.0), ("Left", 83.33)):
-        fig.add_annotation(
-            x=1, y=y_centre, text=label, showarrow=False, textangle=-90,
-            font=dict(size=8, color="rgba(255,255,255,0.18)"),
-        )
-
-
-def _pitch_layout(fig: go.Figure, title: str, height: int = 430,
-                  show_legend: bool = True) -> None:
-    fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#f0f0f0"), x=0.5),
-        xaxis=dict(range=[-2, 102], showgrid=False, zeroline=False,
-                   showticklabels=False, fixedrange=True),
-        yaxis=dict(range=[-12, 106], showgrid=False, zeroline=False,
-                   showticklabels=False, fixedrange=True,
-                   scaleanchor="x", scaleratio=0.68),
-        plot_bgcolor="rgba(15,25,35,0.7)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=10, r=120, t=40, b=20),
-        height=height,
-        showlegend=show_legend,
-        legend=dict(
-            orientation="v", yanchor="middle", y=0.5,
-            xanchor="left", x=1.01,
-            font=dict(size=10, color="#d0d0d0"),
-            bgcolor="rgba(15,25,35,0.8)",
-            bordercolor="rgba(255,255,255,0.1)",
-            borderwidth=1,
-        ),
-        font=dict(color="var(--text-secondary)"),
-    )
+# NOTE (Phase 2a): the former private _draw_full_pitch() / _pitch_layout()
+# helpers were replaced by the shared, theme-aware
+# src.styling.pitch_utils.draw_pitch() (draw_zones=True reproduces the zone
+# grid + corridor labels these helpers drew).
 
 
 def _subsection_title(text: str) -> html.H6:
@@ -274,6 +213,7 @@ def _section_outcome_bar(data: dict) -> dcc.Graph:
             textfont=dict(size=11, color="#fff"),
             hovertemplate=f"{OUTCOME_LABELS[level]}: {count} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -303,6 +243,7 @@ def _section_outcomes_by_zone(data: dict) -> dcc.Graph:
             marker_color=color,
             hovertemplate=f"{level} \u2014 %{{x}}: %{{y}}<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="group",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -337,6 +278,7 @@ def _section_outcomes_by_corridor(data: dict) -> dcc.Graph:
             marker_color=color,
             hovertemplate=f"{level} \u2014 %{{x}}: %{{y}}<extra></extra>",
         ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         barmode="group",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -370,7 +312,6 @@ def _build_offensive_transition_pitch(origins: list[dict]) -> go.Figure:
       other pitch maps in the dashboard.
     """
     fig = go.Figure()
-    _draw_full_pitch(fig)
 
     # Green shaded own half: x = 0 → 50
     fig.add_shape(
@@ -380,7 +321,7 @@ def _build_offensive_transition_pitch(origins: list[dict]) -> go.Figure:
         layer="below",
     )
 
-    # Detection threshold = halfway line (already drawn by _draw_full_pitch)
+    # Detection threshold = halfway line (drawn by draw_pitch below)
     fig.add_annotation(
         x=50, y=103,
         text="Ball win threshold x=50",
@@ -413,11 +354,16 @@ def _build_offensive_transition_pitch(origins: list[dict]) -> go.Figure:
             ],
         ))
 
-    _pitch_layout(
+    # Shared theming first (fonts, hover), then the canonical pitch markings
+    # + layout from the design system (markings sit on layer="below").
+    apply_chart_theme(fig, "dark")
+    draw_pitch(
         fig,
-        "Offensive Transition Origins (Qualified \xb7 Own Half)",
+        theme="dark",
+        title="Offensive Transition Origins (Qualified \xb7 Own Half)",
         height=430,
         show_legend=True,
+        draw_zones=True,
     )
     return fig
 
@@ -439,8 +385,13 @@ def offensive_transition_card(data: dict) -> html.Div:
 
     return html.Div(
         [
-            # ── Card header ───────────────────────────────────────────────────
-            html.H5("Offensive Transition", className="buildup-card-title"),
+            # ── Card header (house style) ──────────────────────────────────────
+            ds_header(
+                "Transitions — Offensive", "bi-lightning-charge-fill",
+                "Offensive Transition",
+                "What happens after the team wins the ball — outcomes, zones "
+                "and recovery origins",
+            ),
 
             # ── Overview KPIs ─────────────────────────────────────────────────
             _subsection_title("Overview"),
@@ -489,6 +440,6 @@ def offensive_transition_card(data: dict) -> html.Div:
                 style={"marginBottom": "1.5rem"},
             ),
         ],
-        className="buildup-card",
+        className="buildup-card ma-card",
         style={"padding": "1.5rem"},
     )

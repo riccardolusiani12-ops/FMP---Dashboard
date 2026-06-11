@@ -13,6 +13,10 @@ from __future__ import annotations
 from dash import html, dcc
 import plotly.graph_objects as go
 
+from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
+from src.styling.plotly_template import apply_chart_theme
+from src.styling.ui_components import ds_header
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
@@ -24,15 +28,18 @@ ORIGIN_LABELS = [
 ]
 MATRIX_ROWS = ["N", "xG", "SoT%", "GS"]
 
+# Canonical 7-category attack-origin taxonomy (SEMANTIC_COLORS origin_* —
+# distinct from the FT entry-method taxonomy method_*; same-named categories
+# like "Set Piece" intentionally keep different colours across the two).
 ORIGIN_COLORS = {
-    "Set Piece":       "#22c55e",   # green
-    "High Regain":     "#ef4444",   # red — aggressive pressing recovery
-    "Cross":           "#06b6d4",   # cyan
-    "Through Ball":    "#8b5cf6",   # purple
-    "Cut Back":        "#f97316",   # orange
-    "Individual Play": "#eab308",   # yellow — solo dribble / no assist
-    "Combination":     "#3b82f6",   # blue — patient build-up
-    "TOTAL":           "#8a1f33",   # primary
+    "Set Piece":       SEMANTIC_COLORS["origin_set_piece"],        # green
+    "High Regain":     SEMANTIC_COLORS["origin_high_regain"],      # red — pressing recovery
+    "Cross":           SEMANTIC_COLORS["origin_cross"],            # cyan
+    "Through Ball":    SEMANTIC_COLORS["origin_through_ball"],     # purple
+    "Cut Back":        SEMANTIC_COLORS["origin_cut_back"],         # orange
+    "Individual Play": SEMANTIC_COLORS["origin_individual_play"],  # yellow — solo dribble
+    "Combination":     SEMANTIC_COLORS["origin_combination"],      # blue — patient build-up
+    "TOTAL":           COLORS_DARK["accent"],                      # primary
 }
 
 ORIGIN_ICONS = {
@@ -48,19 +55,19 @@ ORIGIN_ICONS = {
 TIER_META = {
     "level_3_converted": {
         "label": "Converted",
-        "color": "#22c55e",
+        "color": SEMANTIC_COLORS["tier_converted"],     # "#22c55e"
         "icon": "bi-check-circle-fill",
         "desc": "Goal scored",
     },
     "level_2_threat": {
         "label": "Big Chance",
-        "color": "#f97316",
+        "color": SEMANTIC_COLORS["tier_big_chance"],    # "#f97316"
         "icon": "bi-exclamation-triangle-fill",
         "desc": "Opta Big Chance qualifier",
     },
     "level_0_low": {
         "label": "Speculative",
-        "color": "#6b7280",
+        "color": SEMANTIC_COLORS["tier_speculative"],   # "#6b7280"
         "icon": "bi-dash-circle",
         "desc": "No Big Chance qualifier",
     },
@@ -339,6 +346,7 @@ def _section_origin_breakdown(shots_detail: list) -> html.Div:
             textfont=dict(size=10, color="#fff"),
             hovertemplate=f"{origin}: {count} ({pct}%)<extra></extra>",
         ))
+    apply_chart_theme(bar_fig, "dark")
     bar_fig.update_layout(
         barmode="stack",
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -438,6 +446,7 @@ def _section_shot_quality(tiers: dict, shots_detail: list) -> html.Div:
         hovertemplate="%{label}: %{value} shots (%{percent})<extra></extra>",
         sort=False,
     )])
+    apply_chart_theme(donut_fig, "dark")
     donut_fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=10, r=10, t=10, b=10), height=220,
@@ -584,6 +593,8 @@ def _section_shot_map(shots_detail: list) -> html.Div:
 
     _draw_half_pitch(fig)
 
+    apply_chart_theme(fig, "dark")
+
     fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -648,6 +659,7 @@ def _section_xg_by_origin(matrix: dict) -> html.Div:
         textfont=dict(size=11, color="#e2e8f0"),
         hovertemplate="%{y}: xG = %{x:.2f}<extra></extra>",
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=80, r=40, t=10, b=10), height=max(120, len(origins) * 35),
@@ -853,6 +865,8 @@ def _section_origin_grid(shots_detail: list) -> html.Div:
         font=dict(size=9, color="rgba(255,255,255,0.35)"),
     )
 
+    apply_chart_theme(fig, "dark")
+
     fig.update_layout(
         plot_bgcolor="rgba(15,25,35,0.7)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -923,24 +937,30 @@ def chance_creation_card(data: dict) -> html.Div:
     tiers = data.get("shot_quality_tiers", {})
     shots = data.get("shots_detail", [])
 
+    _header = ds_header(
+        "Offensive Phase — Chance Creation", "bi-bullseye",
+        "Chance Creation",
+        "Shots by attack origin — volume, xG, quality tiers and locations",
+    )
+
     if sm.get("shots_total", 0) == 0 and not shots:
         return html.Div(
             [
-                html.H5("Chance Creation", className="buildup-card-title"),
+                _header,
                 html.P(
                     "No shots found for this team in this match.",
                     className="text-muted",
                     style={"padding": "2rem", "textAlign": "center"},
                 ),
             ],
-            className="buildup-card",
+            className="buildup-card ma-card",
         )
 
     sep = html.Hr(style={"borderColor": "var(--border-light)",
                          "margin": "1.5rem 0"})
 
     sections = [
-        html.H5("Chance Creation", className="buildup-card-title"),
+        _header,
         # 1 — Shot overview KPIs
         _section_shot_overview(sm, matrix),
         sep,
@@ -963,4 +983,4 @@ def chance_creation_card(data: dict) -> html.Div:
         _section_chain_to_goal_matrix(matrix),
     ]
 
-    return html.Div(sections, className="buildup-card")
+    return html.Div(sections, className="buildup-card ma-card")

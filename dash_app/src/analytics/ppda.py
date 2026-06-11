@@ -33,10 +33,13 @@ PASS_EVENT = "pass"
 REGAIN_EVENT = "ball recovery"
 
 # ── Dashboard colour palette ─────────────────────────────────────────────────
-NEUTRAL_COLOR = "#4a6274"
-HIGHLIGHT_COLOR = PRIMARY_COLOR     # #8a1f33
-ELITE_GREEN = "#00CC96"
-WARN_RED = "#EF553B"
+from src.styling.theme import SEMANTIC_COLORS, get_colors
+from src.styling.plotly_template import apply_chart_theme
+
+NEUTRAL_COLOR = SEMANTIC_COLORS["opponent"]    # "#4a6274"
+HIGHLIGHT_COLOR = SEMANTIC_COLORS["team"]      # "#8a1f33" (== PRIMARY_COLOR)
+ELITE_GREEN = SEMANTIC_COLORS["outcome_positive"]   # was #00CC96 — harmonised green
+WARN_RED = SEMANTIC_COLORS["outcome_negative"]      # was #EF553B — harmonised red
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -471,13 +474,8 @@ def build_ppda_bar_figure(
     """
     if ppda_table.empty:
         fig = go.Figure()
-        fig.update_layout(
-            template="plotly_dark",
-            title="No PPDA data available",
-            paper_bgcolor="#1b2838",
-            plot_bgcolor="#1b2838",
-        )
-        return fig
+        fig.update_layout(title="No PPDA data available")
+        return apply_chart_theme(fig, "dark")
 
     df = ppda_table.sort_values("PPDA", ascending=True).copy()
 
@@ -501,7 +499,7 @@ def build_ppda_bar_figure(
         ),
         text=df["PPDA"].apply(lambda v: f"{v:.2f}"),
         textposition="outside",
-        textfont=dict(size=11, color="#c8d0d8"),
+        textfont=dict(size=11, color=get_colors("dark")["text_secondary"]),
         hovertemplate=(
             "<b>%{y}</b><br>"
             "PPDA: %{x:.2f}<br>"
@@ -509,24 +507,21 @@ def build_ppda_bar_figure(
         ),
     ))
 
+    # Shared design-system theming first, chart-specific layout on top.
+    # Built dark; the client-side theme observer re-patches colours on toggle.
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
-        template="plotly_dark",
-        title=dict(
-            text="PPDA Ranking — Pressing Intensity",
-            font=dict(size=15, color="white"),
-        ),
+        title=dict(text="PPDA Ranking — Pressing Intensity"),
         xaxis=dict(
             title="PPDA (lower = more intense)",
-            gridcolor="rgba(255,255,255,0.06)",
             zeroline=False,
         ),
         yaxis=dict(
             title="",
             autorange="reversed",
             tickfont=dict(size=11),
+            showgrid=False,
         ),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
         height=max(450, len(df) * 32),
         margin=dict(l=110, r=60, t=50, b=40),
         showlegend=False,
@@ -560,13 +555,8 @@ def build_ppda_scatter_figure(
 
     if df.empty:
         fig = go.Figure()
-        fig.update_layout(
-            template="plotly_dark",
-            title="No scatter data available",
-            paper_bgcolor="#1b2838",
-            plot_bgcolor="#1b2838",
-        )
-        return fig
+        fig.update_layout(title="No scatter data available")
+        return apply_chart_theme(fig, "dark")
 
     # ── Medians for quadrant lines ───────────────────────────
     med_ppda = df["PPDA"].median()
@@ -732,24 +722,19 @@ def build_ppda_scatter_figure(
             opacity=info["opacity"],
         )
 
+    # Shared design-system theming first, chart-specific layout on top.
+    # Built dark; the client-side theme observer re-patches colours on toggle.
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
-        template="plotly_dark",
-        title=dict(
-            text="PPDA vs Field Tilt",
-            font=dict(size=15, color="white"),
-        ),
+        title=dict(text="PPDA vs Field Tilt"),
         xaxis=dict(
             title="Field Tilt % (higher = more attacking territory control)",
-            gridcolor="rgba(255,255,255,0.06)",
             range=[ax_x_min, ax_x_max],
         ),
         yaxis=dict(
             title="PPDA (lower = more intense pressing)",
-            gridcolor="rgba(255,255,255,0.06)",
             range=[ax_y_min, ax_y_max],
         ),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
         height=560,
         margin=dict(l=60, r=30, t=50, b=50),
         hovermode="closest",

@@ -206,6 +206,19 @@ def _register_prefix(app, prefix: str):
             return None, None
         return no_update, no_update
 
+    # 9a. Possession modal toggle (Match Analysis — Build-up to FT)
+    @app.callback(
+        Output(f"{prefix}-possession-modal", "is_open"),
+        Input(f"{prefix}-possession-modal-trigger", "n_clicks"),
+        State(f"{prefix}-possession-modal", "is_open"),
+        prevent_initial_call=True,
+    )
+    def _toggle_possession_modal(n, is_open):
+        if n:
+            return not is_open
+        return is_open
+
+
     # 9. Match Report card click -> generate PDF and send to browser
     @app.callback(
         Output(f"{prefix}-match-report-download", "data"),
@@ -511,29 +524,222 @@ def _register_season_opponent_callbacks(app):
 
         return fig, short_style, long_style
 
-    # ── FT section: Top Method dropdown ────────────────────────────────────
+    # ── FT section: Top Method modal ───────────────────────────────────────
     @app.callback(
-        Output("opp-season-ft-method-value", "children"),
-        Output("opp-season-ft-method-icon",  "children"),
-        Input("opp-season-ft-method-dropdown", "value"),
-        State("opp-season-ft-method-store",    "data"),
+        Output("opp-season-ft-modal-method",      "is_open"),
+        Output("opp-season-ft-modal-method-body", "children"),
+        Input("opp-season-ft-method-card",        "n_clicks"),
+        State("opp-season-ft-entries-store",      "data"),
+        State("opp-season-ft-modal-method",       "is_open"),
         prevent_initial_call=True,
     )
-    def _ft_method_dropdown(selected_key, store_data):
-        from src.components.final_third_pitch import METHOD_COLORS
-        from src.components.final_third_cards import METHOD_ICONS
-
-        if not selected_key or not store_data:
+    def _ft_modal_method(n, store, is_open):
+        if not n:
             return no_update, no_update
+        if is_open:
+            return False, no_update
 
-        method_pcts = store_data.get("method_pcts", {})
-        pct = method_pcts.get(selected_key, 0.0)
-        color = METHOD_COLORS.get(selected_key, "#8a1f33")
-        icon_cls = METHOD_ICONS.get(selected_key, "bi-bar-chart-fill")
+        from src.components.final_third_pitch import METHOD_COLORS
+        from src.components.opponent_offensive_phase import _FT_METHOD_LABELS
 
-        value_text = f"{pct}%"
-        icon_el = html.I(
-            className=f"bi {icon_cls}",
-            style={"color": color, "fontSize": "1.3rem"},
+        d             = store or {}
+        method_pcts   = d.get("method_pcts", {})
+        method_counts = d.get("method_counts", {})
+
+        _ORDER = [
+            "transition_recovery", "through_ball", "switch_of_play", "set_piece",
+            "long_ball", "cross_delivery", "individual_carry", "short_pass",
+        ]
+
+        rows = []
+        for key in _ORDER:
+            count = method_counts.get(key, 0)
+            if count == 0:
+                continue
+            pct   = method_pcts.get(key, 0.0)
+            color = METHOD_COLORS.get(key, "#8a1f33")
+            label = _FT_METHOD_LABELS.get(key, key)
+            rows.append(
+                html.Div(
+                    [
+                        html.Div(
+                            html.Span(
+                                style={
+                                    "display": "inline-block",
+                                    "width": "10px", "height": "10px",
+                                    "borderRadius": "50%",
+                                    "backgroundColor": color,
+                                    "marginRight": "8px",
+                                }
+                            ),
+                            style={"display": "flex", "alignItems": "center",
+                                   "flex": "0 0 auto"},
+                        ),
+                        html.Span(label, style={
+                            "flex": "1", "fontSize": "0.85rem",
+                            "color": "#d0d0d0",
+                        }),
+                        html.Span(f"{count}", style={
+                            "fontSize": "0.85rem", "color": "#8899aa",
+                            "marginRight": "12px",
+                        }),
+                        html.Span(f"{pct}%", style={
+                            "fontSize": "0.9rem", "fontWeight": "600",
+                            "color": color, "minWidth": "42px",
+                            "textAlign": "right",
+                        }),
+                    ],
+                    style={
+                        "display": "flex", "alignItems": "center",
+                        "padding": "8px 4px",
+                        "borderBottom": "1px solid rgba(255,255,255,0.06)",
+                    },
+                )
+            )
+
+        body = html.Div(rows) if rows else html.P("No data.", style={"color": "#8899aa"})
+        return True, body
+
+    # ── FT section: Success Rate modal ─────────────────────────────────────
+    @app.callback(
+        Output("opp-season-ft-modal-success",      "is_open"),
+        Output("opp-season-ft-modal-success-body", "children"),
+        Input("opp-season-ft-success-card",        "n_clicks"),
+        State("opp-season-ft-entries-store",       "data"),
+        State("opp-season-ft-modal-success",       "is_open"),
+        prevent_initial_call=True,
+    )
+    def _ft_modal_success(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        from src.components.opponent_offensive_phase import (
+            _build_ft_success_by_method,
+            _build_ft_build_depth,
         )
-        return value_text, icon_el
+        entries = (store or {}).get("entries", [])
+        fig_success = _build_ft_success_by_method(entries)
+        fig_depth   = _build_ft_build_depth(entries)
+        body = html.Div([
+            dcc.Graph(figure=fig_success, config={"displayModeBar": False}),
+            html.Hr(style={"borderColor": "rgba(255,255,255,0.08)",
+                           "margin": "1rem 0"}),
+            dcc.Graph(figure=fig_depth, config={"displayModeBar": False}),
+        ])
+        return True, body
+
+    # ── FT section: Tempo modal ─────────────────────────────────────────────
+    @app.callback(
+        Output("opp-season-ft-modal-tempo",      "is_open"),
+        Output("opp-season-ft-modal-tempo-body", "children"),
+        Input("opp-season-ft-tempo-card",        "n_clicks"),
+        State("opp-season-ft-entries-store",     "data"),
+        State("opp-season-ft-modal-tempo",       "is_open"),
+        prevent_initial_call=True,
+    )
+    def _ft_modal_tempo(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        from src.components.opponent_offensive_phase import _build_ft_timing_chart
+        if is_open:
+            return False, no_update
+        entries = (store or {}).get("entries", [])
+        fig = _build_ft_timing_chart(entries)
+        body = dcc.Graph(figure=fig, config={"displayModeBar": False})
+        return True, body
+
+    # ── FT section: Box Touches modal ───────────────────────────────────────
+    @app.callback(
+        Output("opp-season-ft-modal-boxtouches",      "is_open"),
+        Output("opp-season-ft-modal-boxtouches-body", "children"),
+        Input("opp-season-ft-boxtouches-card",        "n_clicks"),
+        State("opp-season-ft-entries-store",          "data"),
+        State("opp-season-ft-modal-boxtouches",       "is_open"),
+        prevent_initial_call=True,
+    )
+    def _ft_modal_boxtouches(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        from src.components.opponent_offensive_phase import _build_ft_box_touches_rank
+        from src.analytics.season_offensive_summary import compute_league_offensive_benchmarks
+        if is_open:
+            return False, no_update
+        d = store or {}
+        season    = d.get("season", "")
+        team_name = d.get("team", "")
+        benchmarks = compute_league_offensive_benchmarks(season)
+        fig = _build_ft_box_touches_rank(benchmarks, team_name)
+        body = dcc.Graph(figure=fig, config={"displayModeBar": False})
+        return True, body
+
+    # ── CC section: xG modal open/close ─────────────────────────────────────
+    @app.callback(
+        Output("opp-season-cc-xg-modal", "is_open"),
+        Input("opp-season-cc-xg-card",   "n_clicks"),
+        State("opp-season-cc-xg-modal",  "is_open"),
+        prevent_initial_call=True,
+    )
+    def _cc_xg_modal_toggle(n_clicks, is_open):
+        if n_clicks:
+            return True
+        return is_open
+
+    # ── CC section: xG modal graph populate ─────────────────────────────────
+    @app.callback(
+        Output("opp-season-cc-xg-modal-graph", "figure"),
+        Input("opp-season-cc-xg-modal",        "is_open"),
+        State("opp-season-load-trigger",        "data"),
+        prevent_initial_call=True,
+    )
+    def _cc_xg_modal_graph(is_open, trigger):
+        if not is_open or not trigger:
+            return no_update
+        from src.analytics.season_offensive_summary import compute_league_offensive_benchmarks
+        from src.components.opponent_offensive_phase import _build_cc_xg_bar
+        from src.utils.caching import cache_get, cache_set
+
+        season    = trigger["season"]
+        team_name = trigger["team"]
+        cache_key = f"opp_cc_xg_bar_{season}"
+        benchmarks = cache_get(cache_key)
+        if benchmarks is None:
+            benchmarks = compute_league_offensive_benchmarks(season)
+            cache_set(cache_key, benchmarks)
+        return _build_cc_xg_bar(benchmarks, team_name)
+
+    # ── CC section: Goal Types modal open/close ──────────────────────────────
+    @app.callback(
+        Output("opp-season-cc-goal-types-modal", "is_open"),
+        Input("opp-season-cc-origin-card",       "n_clicks"),
+        State("opp-season-cc-goal-types-modal",  "is_open"),
+        prevent_initial_call=True,
+    )
+    def _cc_goal_types_modal_toggle(n_clicks, is_open):
+        if n_clicks:
+            return True
+        return is_open
+
+    # ── CC section: Goal Types modal graph populate ───────────────────────────
+    @app.callback(
+        Output("opp-season-cc-goal-types-graph",  "figure"),
+        Input("opp-season-cc-goal-types-modal",   "is_open"),
+        State("opp-season-load-trigger",          "data"),
+        prevent_initial_call=True,
+    )
+    def _cc_goal_types_modal_graph(is_open, trigger):
+        if not is_open or not trigger:
+            return no_update
+        from src.analytics.season_offensive_summary import compute_season_chance_creation
+        from src.components.opponent_offensive_phase import _build_goal_types_chart
+        from src.utils.caching import cache_get, cache_set
+
+        season    = trigger["season"]
+        team_name = trigger["team"]
+        cache_key = f"opp_cc_goal_types_{team_name}_{season}"
+        shots = cache_get(cache_key)
+        if shots is None:
+            data = compute_season_chance_creation(season, team_name)
+            shots = data["shots"]
+            cache_set(cache_key, shots)
+        return _build_goal_types_chart(shots, team_name, season)
