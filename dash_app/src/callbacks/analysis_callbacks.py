@@ -113,7 +113,7 @@ def _register_prefix(app, prefix: str):
                 return id_dict["index"], None
         return no_update, no_update
 
-    # 4. Module card click -> store active module (skip match_report for download)
+    # 4. Module card click -> store active module
     @app.callback(
         Output(active_module_id, "data"),
         Input({"type": f"{prefix}-module-card", "index": ALL}, "n_clicks"),
@@ -122,7 +122,7 @@ def _register_prefix(app, prefix: str):
     )
     def _store_module(n_clicks_list, id_list):
         for n, id_dict in zip(n_clicks_list, id_list):
-            if n and id_dict["index"] != "match_report":
+            if n:
                 return id_dict["index"]
         return no_update
 
@@ -229,50 +229,6 @@ def _register_prefix(app, prefix: str):
         if n:
             return not is_open
         return is_open
-
-
-    # 9. Match Report card click -> generate PDF and send to browser
-    @app.callback(
-        Output(f"{prefix}-match-report-download", "data"),
-        Input({"type": f"{prefix}-module-card", "index": "match_report"}, "n_clicks"),
-        State(selected_match_id, "data"),
-        State(season_id, "value"),
-        prevent_initial_call=True,
-    )
-    def _download_match_report(n_clicks, match_id, season):
-        if not n_clicks:
-            return no_update
-
-        log.info(f"Match Report download triggered: match_id={match_id}, season={season}")
-
-        if not match_id:
-            log.error("Match Report download: No match selected")
-            return no_update
-
-        if not season:
-            log.error("Match Report download: No season selected")
-            return no_update
-
-        match_csv = _find_match_csv(season, match_id)
-        if match_csv is None:
-            log.error("Match Report download: CSV not found for season=%s, match_id=%s", season, match_id)
-            log.error("Available match files in %s: %s", season, [str(f.name) for f in list_match_files(season)[:5]])
-            return no_update
-
-        try:
-            log.info("Building PDF from: %s", match_csv)
-            from src.reporting.match_report_pdf import build_match_report_pdf
-            pdf_bytes = build_match_report_pdf(match_csv, season)
-            log.info("PDF built successfully: %d bytes", len(pdf_bytes))
-
-            info = parse_match_filename(match_csv)
-            filename = f"match_report_GW{info.get('week','?')}_{info.get('home','?')}_{info.get('away','?')}.pdf"
-            log.info("Sending PDF download: %s", filename)
-            return dcc.send_bytes(pdf_bytes, filename)
-
-        except Exception as exc:
-            log.error("Match Report PDF generation failed: %s", exc, exc_info=True)
-            return no_update
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1205,3 +1161,88 @@ def _register_season_opponent_callbacks(app):
                 show_xg_total=False,
             )
             return True, body
+
+    # ── Chances Conceded: consolidated origin breakdown modal (single-team) ───
+    @app.callback(
+        Output("opp-season-cc-conceded-modal-origin-breakdown",       "is_open"),
+        Output("opp-season-cc-conceded-modal-origin-breakdown-title", "children"),
+        Output("opp-season-cc-conceded-modal-origin-breakdown-body",  "children"),
+        Input("opp-season-cc-conceded-kpi-origin-breakdown",          "n_clicks"),
+        State("opp-season-cc-conceded-store",                         "data"),
+        State("opp-season-cc-conceded-modal-origin-breakdown",        "is_open"),
+        prevent_initial_call=True,
+    )
+    def _cc_conceded_origin_breakdown_modal(n, store, is_open):
+        if not n:
+            return no_update, no_update, no_update
+        if is_open:
+            return False, no_update, no_update
+
+        from src.components.opp_season_chances_conceded_cards import compute_season_cc_conceded
+        from src.analytics.chance_creation import ORIGIN_LABELS as _OB_LABELS
+        from dash import html as _html
+
+        d = store or {}
+        season    = d.get("season", "")
+        team_name = d.get("team", "")
+        season_key = season.replace("/", "_")
+
+        data = compute_season_cc_conceded(season_key, team_name)
+        origin_data = data.get("origin_data", {})
+
+        title = f"Origin of Chances Conceded — {team_name}  {season}"
+
+        rows_data = sorted(
+            [
+                (o, origin_data.get(o, {}))
+                for o in _OB_LABELS
+                if origin_data.get(o, {}).get("total", 0) > 0
+            ],
+            key=lambda x: x[1].get("total", 0),
+            reverse=True,
+        )
+
+        if not rows_data:
+            body = _html.P("No origin data available.", style={"color": "#8899aa"})
+            return True, title, body
+
+        header = _html.Div(
+            [
+                _html.Span("Origin",      style={"flex": "1",          "color": "#8899aa", "fontSize": "0.75rem"}),
+                _html.Span("Total",       style={"minWidth": "3.5rem", "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+                _html.Span("/ Match",     style={"minWidth": "3.5rem", "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+                _html.Span("Goals",       style={"minWidth": "3rem",   "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+                _html.Span("Conv %",      style={"minWidth": "4rem",   "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+            ],
+            style={"display": "flex", "padding": "6px 10px",
+                   "borderBottom": "1px solid rgba(255,255,255,0.15)", "marginBottom": "2px"},
+        )
+
+        table_rows = []
+        for o, info in rows_data:
+            cnt  = info.get("total", 0)
+            pm   = info.get("per_match", 0.0)
+            g    = info.get("goals_total", 0)
+            conv = info.get("conversion_pct")
+            conv_str = f"{conv:.1f}%" if conv is not None else "—"
+            table_rows.append(
+                _html.Div(
+                    [
+                        _html.Span(o,           style={"flex": "1",          "fontSize": "0.88rem", "color": "var(--text-primary)"}),
+                        _html.Span(str(cnt),    style={"minWidth": "3.5rem", "textAlign": "right",  "fontSize": "0.88rem", "color": "var(--text-secondary)"}),
+                        _html.Span(f"{pm:.1f}", style={"minWidth": "3.5rem", "textAlign": "right",  "fontSize": "0.88rem", "color": "var(--text-secondary)"}),
+                        _html.Span(str(g),      style={"minWidth": "3rem",   "textAlign": "right",  "fontSize": "0.88rem", "color": "var(--text-secondary)"}),
+                        _html.Span(conv_str,    style={"minWidth": "4rem",   "textAlign": "right",  "fontSize": "0.9rem",  "fontWeight": "600", "color": "var(--text-primary)"}),
+                    ],
+                    style={"display": "flex", "padding": "6px 10px",
+                           "borderBottom": "1px solid rgba(255,255,255,0.05)",
+                           "alignItems": "center"},
+                )
+            )
+
+        body = _html.Div(
+            [header, *table_rows],
+            style={"maxHeight": "460px", "overflowY": "auto",
+                   "borderRadius": "6px", "border": "1px solid rgba(255,255,255,0.07)"},
+        )
+        return True, title, body

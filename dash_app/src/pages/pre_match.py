@@ -53,9 +53,6 @@ def layout() -> html.Div:
             dcc.Store(id="opponent-selected-match", data=None),
             dcc.Store(id="opponent-active-module",  data=None),
 
-            # Download sink (required by callback 9 in _register_prefix)
-            dcc.Download(id="opponent-match-report-download"),
-
             # Season-level view store (new — owned by register_season_callbacks)
             dcc.Store(id="opp-season-active-view", data=None),
             # Carries {season, team} when Offensive Phase view is active;

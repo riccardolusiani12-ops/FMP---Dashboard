@@ -42,9 +42,6 @@ def layout() -> html.Div:
             dcc.Store(id="ma-selected-match", data=None),
             dcc.Store(id="ma-active-module", data=None),
 
-            # Download sink for the Match Report PDF
-            dcc.Download(id="ma-match-report-download"),
-
             # Teams grid — same as Team Overview
             html.Div(
                 [

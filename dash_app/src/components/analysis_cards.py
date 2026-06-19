@@ -284,29 +284,6 @@ def _module_card_active(icon: str, title: str, desc: str,
     )
 
 
-def _module_card_download(icon: str, title: str, desc: str,
-                          module_id: str, prefix: str) -> html.Div:
-    """Active card whose click triggers a download instead of opening a view."""
-    return html.Div(
-        [
-            html.Div(html.I(className=f"bi {icon}"), className="module-icon"),
-            html.Div(title,  className="module-title"),
-            html.Div(desc,   className="module-desc"),
-            html.Div(
-                [
-                    html.I(className="bi bi-download me-2"),
-                    html.Span("Download PDF"),
-                ],
-                className="module-footer",
-                style={"color": "var(--primary-light)"},
-            ),
-        ],
-        className="module-card module-card-active",
-        id={"type": f"{prefix}-module-card", "index": module_id},
-        n_clicks=0,
-    )
-
-
 def _module_card_soon(icon: str, title: str, desc: str) -> html.Div:
     return html.Div(
         [
@@ -372,13 +349,6 @@ def _module_selector(match_label: str, prefix: str) -> html.Div:
                         "Set Pieces",
                         "Corner kicks, free kicks and throw-in analysis.",
                         "set_pieces",
-                        prefix,
-                    ),
-                    _module_card_download(
-                        "bi-file-earmark-pdf-fill",
-                        "Match Report",
-                        "Download a PDF summary — metadata, formations, lineups & bench.",
-                        "match_report",
                         prefix,
                     ),
                 ],
