@@ -1611,17 +1611,142 @@ def build_cc_section(season: str, team_name: str) -> html.Div:
         ),
     )
 
-    # ── Goal Types modal ───────────────────────────────────────────────────
+    # ── Goal Types modal — chart + origin table ────────────────────────────
+    # Build the "Chances Created by Attack Origin" table from origin_data,
+    # which is already computed at render time. Sorted descending by total.
+    from src.analytics.chance_creation import ORIGIN_LABELS as _GT_ORIGIN_LABELS
+    _gt_od = m.get("origin_data", {})
+    _gt_rows_data = sorted(
+        [
+            (o, _gt_od.get(o, {}))
+            for o in _GT_ORIGIN_LABELS
+            if _gt_od.get(o, {}).get("total", 0) > 0
+        ],
+        key=lambda x: x[1].get("total", 0),
+        reverse=True,
+    )
+
+    _gt_header = html.Div(
+        [
+            html.Span("Origin",          style={"flex": "1",          "color": "#8899aa", "fontSize": "0.75rem"}),
+            html.Span("Total",           style={"minWidth": "3.5rem", "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+            html.Span("/ Match",         style={"minWidth": "3.5rem", "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+            html.Span("Goals",           style={"minWidth": "3rem",   "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+            html.Span("Conv %",          style={"minWidth": "4rem",   "textAlign": "right", "color": "#8899aa", "fontSize": "0.75rem"}),
+        ],
+        style={"display": "flex", "padding": "6px 10px",
+               "borderBottom": "1px solid rgba(255,255,255,0.15)", "marginBottom": "2px"},
+    )
+    _gt_table_rows = []
+    for _o, _info in _gt_rows_data:
+        _cnt  = _info.get("total", 0)
+        _pm   = _info.get("per_match", 0.0)
+        _g    = _info.get("goals_total", 0)
+        _conv = _info.get("conversion_pct")
+        _conv_str = f"{_conv:.1f}%" if _conv is not None else "—"
+        _gt_table_rows.append(
+            html.Div(
+                [
+                    html.Span(_o,           style={"flex": "1",          "fontSize": "0.88rem", "color": "var(--text-primary)"}),
+                    html.Span(str(_cnt),    style={"minWidth": "3.5rem", "textAlign": "right",  "fontSize": "0.88rem", "color": "var(--text-secondary)"}),
+                    html.Span(f"{_pm:.1f}", style={"minWidth": "3.5rem", "textAlign": "right",  "fontSize": "0.88rem", "color": "var(--text-secondary)"}),
+                    html.Span(str(_g),      style={"minWidth": "3rem",   "textAlign": "right",  "fontSize": "0.88rem", "color": "var(--text-secondary)"}),
+                    html.Span(_conv_str,    style={"minWidth": "4rem",   "textAlign": "right",  "fontSize": "0.9rem",  "fontWeight": "600", "color": "var(--text-primary)"}),
+                ],
+                style={"display": "flex", "padding": "6px 10px",
+                       "borderBottom": "1px solid rgba(255,255,255,0.05)",
+                       "alignItems": "center"},
+            )
+        )
+
+    _gt_origin_table = html.Div(
+        [
+            html.H6("Chances Created by Attack Origin",
+                    style={"color": "var(--text-secondary)", "fontSize": "0.82rem",
+                           "marginBottom": "0.5rem", "marginTop": "1.25rem",
+                           "textTransform": "uppercase", "letterSpacing": "0.05em"}),
+            html.Div(
+                [_gt_header, *_gt_table_rows],
+                style={"borderRadius": "6px", "border": "1px solid rgba(255,255,255,0.07)"},
+            ),
+        ],
+    )
+
     goal_types_modal = build_unified_modal(
         "opp-season-cc-goal-types-modal",
         "opp-season-cc-goal-types-modal-title",
         "opp-season-cc-goal-types-modal-body",
         title="Goal Types — Season",
-        body=dcc.Graph(
-            id="opp-season-cc-goal-types-graph",
-            style={"height": "460px"},
-            config={"displayModeBar": False},
-        ),
+        body=html.Div([
+            dcc.Graph(
+                id="opp-season-cc-goal-types-graph",
+                style={"height": "400px"},
+                config={"displayModeBar": False},
+            ),
+            _gt_origin_table,
+        ]),
+    )
+
+    # ── Attack Origin Breakdown — per-origin cards with goals + conversion ──
+    from src.analytics.chance_creation import ORIGIN_LABELS as _ORIGIN_LABELS
+    _origin_data = m.get("origin_data", {})
+    _origin_cards = []
+    for _o in _ORIGIN_LABELS:
+        _info = _origin_data.get(_o, {})
+        _cnt  = _info.get("total", 0)
+        if _cnt == 0:
+            continue
+        _pm        = _info.get("per_match", 0.0)
+        _goals     = _info.get("goals_total", 0)
+        _conv      = _info.get("conversion_pct")
+        _oc        = ORIGIN_COLORS.get(_o, "#6b7280")
+        _oi        = ORIGIN_ICONS.get(_o, "bi-activity")
+
+        _conv_line = (
+            html.Span(
+                f"{_goals} goals ({_conv:.1f}% conversion)",
+                className="kpi-subtitle",
+                style={"color": "var(--text-muted)", "fontSize": "0.72rem"},
+            )
+            if _conv is not None else None
+        )
+        _origin_cards.append(
+            html.Div(
+                [
+                    html.Div(
+                        html.I(className=f"bi {_oi}",
+                               style={"color": _oc, "fontSize": "1.3rem"}),
+                        className="kpi-icon",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(_o, className="kpi-label"),
+                            html.Span(f"{_pm:.1f}", className="kpi-value"),
+                            html.Span(f"Total: {_cnt}",
+                                      className="kpi-subtitle",
+                                      style={"color": _oc}),
+                            *([] if _conv_line is None else [_conv_line]),
+                        ],
+                        className="kpi-text",
+                    ),
+                ],
+                className="kpi-card",
+            )
+        )
+
+    attack_origin_breakdown_div = html.Div(
+        [
+            html.H6("ATTACK ORIGIN BREAKDOWN", className="buildup-subsection-title"),
+            html.Div(
+                "How each chance was created — priority: "
+                "Through Ball → Set Piece → Individual Play → High Regain → Cut Back → Cross → Combination",
+                style={"fontSize": "0.78rem", "color": "var(--text-muted)",
+                       "marginBottom": "0.6rem"},
+            ),
+            html.Div(_origin_cards, className="team-kpi-row",
+                     style={"flexWrap": "wrap"}),
+        ],
+        style={"marginTop": "1.5rem"},
     )
 
     # ── Attack Origin Zones — Season Aggregate ────────────────────────────
@@ -1789,6 +1914,7 @@ def build_cc_section(season: str, team_name: str) -> html.Div:
             xg_modal,
             goal_types_modal,
             kpi_row,
+            attack_origin_breakdown_div,
             attack_origin_zones_div,
         ],
         className="analysis-section buildup-card ma-card",

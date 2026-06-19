@@ -172,10 +172,13 @@ def compute_season_cc_conceded(season: str, team_name: str) -> dict:
     origin_data: dict[str, dict] = {}
     for origin in ORIGIN_LABELS:
         slug = _origin_slug(origin)
+        raw_conv = row.get(f"{slug}_conversion_pct")
         origin_data[origin] = {
-            "total":     _i(f"{slug}_total"),
-            "per_match": _f(f"{slug}_per_match"),
-            "pct":       _f(f"{slug}_pct"),
+            "total":          _i(f"{slug}_total"),
+            "per_match":      _f(f"{slug}_per_match"),
+            "pct":            _f(f"{slug}_pct"),
+            "goals_total":    _i(f"{slug}_goals_total"),
+            "conversion_pct": None if (raw_conv is None or raw_conv != raw_conv) else float(raw_conv),
         }
 
     # Shot quality tiers
@@ -216,7 +219,7 @@ def _empty_result() -> dict:
         "goals_conceded_total": 0, "goals_conceded_per_match": 0.0,
         "big_chances_total": 0, "big_chances_per_match": 0.0,
         "xg_conceded_total": 0.0, "xg_conceded_per_match": 0.0,
-        "origin_data": {o: {"total": 0, "per_match": 0.0, "pct": 0.0} for o in ORIGIN_LABELS},
+        "origin_data": {o: {"total": 0, "per_match": 0.0, "pct": 0.0, "goals_total": 0, "conversion_pct": None} for o in ORIGIN_LABELS},
         "tier_data": {tk: {"total": 0, "per_match": 0.0, "pct": 0.0}
                       for tk in ("level_3_converted", "level_2_threat", "level_0_low")},
         "shots": [],
@@ -418,6 +421,12 @@ def _league_table(
 def _section_shots_overview(d: dict) -> html.Div:
     mp   = max(d.get("num_matches", 1), 1)
 
+    # Total chances conceded across all origins (sum of origin totals)
+    origin_data = d.get("origin_data", {})
+    total_origin_chances = sum(
+        info.get("total", 0) for info in origin_data.values()
+    )
+
     return html.Div(
         [
             html.H6("SHOTS CONCEDED — OVERVIEW", className="buildup-subsection-title"),
@@ -452,6 +461,12 @@ def _section_shots_overview(d: dict) -> html.Div:
                         f"Total: {d['xg_conceded_total']:.2f}",
                         "#ef4444", "bi-graph-down-arrow",
                         "opp-season-cc-conceded-kpi-xg-pm",
+                    ),
+                    _modal_kpi(
+                        "Origin of Chances Conceded", str(total_origin_chances),
+                        f"Across {mp} matches",
+                        "#64748b", "bi-diagram-3-fill",
+                        "opp-season-cc-conceded-kpi-origin-breakdown",
                     ),
                 ],
                 className="team-kpi-row",
@@ -500,16 +515,48 @@ def _section_origin_breakdown(d: dict) -> html.Div:
         n    = info.get("total", 0)
         if n == 0:
             continue
-        slug = _origin_slug(origin)
-        pct  = info.get("pct", 0.0)
-        pm   = info.get("per_match", 0.0)
-        color = ORIGIN_COLORS.get(origin, "#6b7280")
+        slug         = _origin_slug(origin)
+        pct          = info.get("pct", 0.0)
+        pm           = info.get("per_match", 0.0)
+        goals_total  = info.get("goals_total", 0)
+        conv_pct     = info.get("conversion_pct")
+        color        = ORIGIN_COLORS.get(origin, "#6b7280")
+
+        if conv_pct is not None:
+            conv_line = html.Span(
+                f"{goals_total} goals conceded ({conv_pct:.1f}% conversion)",
+                className="kpi-subtitle",
+                style={"color": "var(--text-muted)", "fontSize": "0.72rem"},
+            )
+        else:
+            conv_line = None
+
+        card_children = [
+            html.Div(
+                html.I(className=f"bi {ORIGIN_ICONS.get(origin, 'bi-activity')}",
+                       style={"color": color, "fontSize": "1.3rem"}),
+                className="kpi-icon",
+            ),
+            html.Div(
+                [
+                    html.Span(origin, className="kpi-label"),
+                    html.Span(f"{pm:.1f}", className="kpi-value"),
+                    html.Span(f"Total: {n}  ({pct:.1f}%)",
+                              className="kpi-subtitle",
+                              style={"color": color}),
+                    *([] if conv_line is None else [conv_line]),
+                ],
+                className="kpi-text",
+            ),
+            _expand_icon(),
+        ]
         cards.append(
-            _modal_kpi(
-                origin, f"{pm:.1f}",
-                f"Total: {n}  ({pct:.1f}%)",
-                color, ORIGIN_ICONS.get(origin, "bi-activity"),
-                f"opp-season-cc-conceded-kpi-origin-{slug}",
+            html.Div(
+                card_children,
+                className="kpi-card",
+                id=f"opp-season-cc-conceded-kpi-origin-{slug}",
+                n_clicks=0,
+                style={"cursor": "pointer", "position": "relative"},
             )
         )
 
@@ -780,7 +827,16 @@ def _build_all_modals() -> list:
             size    ="md",
         ))
 
-    # Origin breakdown modals
+    # Consolidated origin-breakdown modal (single-team, no league comparison)
+    modals.append(build_unified_modal(
+        modal_id="opp-season-cc-conceded-modal-origin-breakdown",
+        title_id="opp-season-cc-conceded-modal-origin-breakdown-title",
+        body_id ="opp-season-cc-conceded-modal-origin-breakdown-body",
+        title   ="Origin of Chances Conceded — Season",
+        size    ="md",
+    ))
+
+    # Per-origin league-comparison modals (one per origin)
     for origin in ORIGIN_LABELS:
         slug = _origin_slug(origin)
         modals.append(build_unified_modal(

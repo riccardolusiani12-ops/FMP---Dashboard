@@ -1301,10 +1301,9 @@ def _build_fk_delivery_pitch_map(deliveries: list) -> go.Figure:
     ))
 
     if not box_deliveries:
-        _layout = _pitch_layout("FK Deliveries into the Box", False, [])
+        _layout = _pitch_layout("FK Deliveries into the Box", False,
+                                _zone_annotations(False))
         _layout["yaxis"]["range"] = [FK_FIG_Y_MIN - 1, FIG_Y_MAX + 0.5]
-        _layout["xaxis"]["scaleanchor"] = "y"
-        _layout["xaxis"]["scaleratio"] = 1
         _layout["height"] = 680
         _layout["annotations"] = _layout.get("annotations", []) + [
             dict(x=50, y=FK_HALF_LINE - 0.8, text="Halfway Line", showarrow=False,
@@ -1397,10 +1396,9 @@ def _build_fk_delivery_pitch_map(deliveries: list) -> go.Figure:
             hoverinfo="skip",
         ))
 
-    _layout = _pitch_layout("FK Deliveries into the Box", False, [])
+    _layout = _pitch_layout("FK Deliveries into the Box", False,
+                            _zone_annotations(False))
     _layout["yaxis"]["range"] = [FK_FIG_Y_MIN - 1, FIG_Y_MAX + 0.5]
-    _layout["xaxis"]["scaleanchor"] = "y"
-    _layout["xaxis"]["scaleratio"] = 1
     _layout["height"] = 680
     _layout["annotations"] = _layout.get("annotations", []) + [
         dict(x=50, y=FK_HALF_LINE - 0.8, text="Halfway Line", showarrow=False,

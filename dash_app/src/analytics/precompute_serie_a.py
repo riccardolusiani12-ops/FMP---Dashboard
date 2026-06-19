@@ -1103,10 +1103,13 @@ def precompute_season_chances_conceded(season: str) -> None:
 
         # Attack origin breakdown — use ORIGIN_LABELS to ensure all origins present
         origin_counts: dict[str, int] = {o: 0 for o in ORIGIN_LABELS}
+        origin_goals:  dict[str, int] = {o: 0 for o in ORIGIN_LABELS}
         for s in all_shots:
             origin = s.get("origin", "Combination")
             if origin in origin_counts:
                 origin_counts[origin] += 1
+                if s.get("is_goal"):
+                    origin_goals[origin] += 1
 
         safe_total = max(total_shots, 1)
 
@@ -1164,13 +1167,16 @@ def precompute_season_chances_conceded(season: str) -> None:
             "zone_shot_counts_json":      _json.dumps({str(k): v for k, v in zone_shot_counts.items()}),
         }
 
-        # Attack origin columns (flat, one triple per origin)
+        # Attack origin columns (flat, one quintuple per origin)
         for origin in ORIGIN_LABELS:
-            slug = origin.lower().replace(" ", "_")
-            cnt  = origin_counts.get(origin, 0)
-            row[f"{slug}_total"]    = cnt
-            row[f"{slug}_per_match"] = round(cnt / mp, 1)
-            row[f"{slug}_pct"]      = round(cnt / safe_total * 100, 1)
+            slug  = origin.lower().replace(" ", "_")
+            cnt   = origin_counts.get(origin, 0)
+            goals = origin_goals.get(origin, 0)
+            row[f"{slug}_total"]          = cnt
+            row[f"{slug}_per_match"]      = round(cnt / mp, 1)
+            row[f"{slug}_pct"]            = round(cnt / safe_total * 100, 1)
+            row[f"{slug}_goals_total"]    = goals
+            row[f"{slug}_conversion_pct"] = round(goals / cnt * 100, 1) if cnt > 0 else None
 
         # Shot quality tier columns
         for tk in _TIER_KEYS:

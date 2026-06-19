@@ -315,6 +315,25 @@ def compute_season_chance_creation(season: str, team_name: str) -> dict:
     top_origin = df["origin"].mode()[0] if not df.empty else "Combination"
     origin_counts = df["origin"].value_counts().to_dict()
 
+    # Goals and conversion rate per origin (derived from shot-level data)
+    from src.analytics.chance_creation import ORIGIN_LABELS as _ORIGIN_LABELS
+    origin_goals: dict[str, int] = {o: 0 for o in _ORIGIN_LABELS}
+    for _, s in df.iterrows():
+        o = s.get("origin", "Combination")
+        if o in origin_goals and s.get("is_goal"):
+            origin_goals[o] += 1
+
+    origin_data: dict[str, dict] = {}
+    for o in _ORIGIN_LABELS:
+        cnt  = int(origin_counts.get(o, 0))
+        g    = origin_goals.get(o, 0)
+        origin_data[o] = {
+            "total":          cnt,
+            "per_match":      0.0,   # filled below after mp is known
+            "goals_total":    g,
+            "conversion_pct": round(g / cnt * 100, 1) if cnt > 0 else None,
+        }
+
     mp = 0
     if summary is not None and not summary.empty:
         row = _filter_team(summary, team_name)
@@ -323,16 +342,21 @@ def compute_season_chance_creation(season: str, team_name: str) -> dict:
     if mp == 0:
         mp = int(df["gw"].nunique()) or 1
 
+    safe_mp = max(mp, 1)
+    for o in _ORIGIN_LABELS:
+        origin_data[o]["per_match"] = round(origin_data[o]["total"] / safe_mp, 1)
+
     metrics = {
         "total_shots":      total,
-        "shots_per_match":  round(total / mp, 1),
+        "shots_per_match":  round(total / safe_mp, 1),
         "goals":            goals,
         "on_target":        on_tgt,
         "sot_pct":          round(on_tgt / max(total, 1) * 100, 1),
         "xg_total":         round(xg_total, 2),
-        "xg_per_match":     round(xg_total / mp, 2),
+        "xg_per_match":     round(xg_total / safe_mp, 2),
         "top_origin":       top_origin,
         "origin_counts":    {k: int(v) for k, v in origin_counts.items()},
+        "origin_data":      origin_data,
     }
 
     shots = df.to_dict(orient="records")
@@ -340,12 +364,17 @@ def compute_season_chance_creation(season: str, team_name: str) -> dict:
 
 
 def _empty_cc_result() -> dict:
+    from src.analytics.chance_creation import ORIGIN_LABELS as _ORIGIN_LABELS
     return {
         "metrics": {
             "total_shots": 0, "shots_per_match": 0.0, "goals": 0,
             "on_target": 0, "sot_pct": 0.0,
             "xg_total": 0.0, "xg_per_match": 0.0,
             "top_origin": "Combination", "origin_counts": {},
+            "origin_data": {
+                o: {"total": 0, "per_match": 0.0, "goals_total": 0, "conversion_pct": None}
+                for o in _ORIGIN_LABELS
+            },
         },
         "shots": [], "matches": 0,
     }
