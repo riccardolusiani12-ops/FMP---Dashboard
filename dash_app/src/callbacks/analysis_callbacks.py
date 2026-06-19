@@ -218,6 +218,18 @@ def _register_prefix(app, prefix: str):
             return not is_open
         return is_open
 
+    # 9b. Tempo modal toggle (Match Analysis — Build-up to FT)
+    @app.callback(
+        Output(f"{prefix}-tempo-modal", "is_open"),
+        Input(f"{prefix}-tempo-modal-trigger", "n_clicks"),
+        State(f"{prefix}-tempo-modal", "is_open"),
+        prevent_initial_call=True,
+    )
+    def _toggle_tempo_modal(n, is_open):
+        if n:
+            return not is_open
+        return is_open
+
 
     # 9. Match Report card click -> generate PDF and send to browser
     @app.callback(
@@ -334,9 +346,8 @@ def _register_season_opponent_callbacks(app):
         team   = team_from_slug(team_slug) or team_slug
         season = season or ""
 
-        if active_view == "offensive":
-            from src.components.opponent_offensive_phase import offensive_phase_overview_card
-            nav = html.Div(
+        def _nav_bar() -> html.Div:
+            return html.Div(
                 [
                     html.Span(
                         [html.I(className="bi bi-arrow-left me-2"), "Back to Overview"],
@@ -355,11 +366,36 @@ def _register_season_opponent_callbacks(app):
                 ],
                 className="d-flex align-items-center mb-4",
             )
+
+        if active_view == "offensive":
+            from src.components.opponent_offensive_phase import offensive_phase_overview_card
             # Return the skeleton immediately — no heavy computation
-            skeleton = html.Div([nav, offensive_phase_overview_card(season, team)])
+            skeleton = html.Div([_nav_bar(), offensive_phase_overview_card(season, team)])
             # Trigger value carries {season, team} so lazy callbacks can read it
             trigger = {"season": season, "team": team}
             return hide, show, skeleton, trigger
+
+        elif active_view == "defensive":
+            def _placeholder(section_id: str) -> html.Div:
+                return html.Div(
+                    dcc.Loading(
+                        html.Div(id=section_id),
+                        type="circle",
+                        color="#8a1f33",
+                    ),
+                    style={"minHeight": "120px"},
+                    id=f"{section_id}-wrap",
+                )
+
+            skeleton = html.Div([
+                _nav_bar(),
+                _placeholder("opp-section-dp"),
+                _placeholder("opp-section-dc"),
+                _placeholder("opp-section-ccc"),
+            ])
+            trigger = {"season": season, "team": team}
+            return hide, show, skeleton, trigger
+
         else:
             return hide, show, season_overview_tiles(team, season), no_update
 
@@ -436,49 +472,53 @@ def _register_season_opponent_callbacks(app):
         from src.components.opponent_offensive_phase import build_cc_section
         return build_cc_section(trigger["season"], trigger["team"])
 
-    # ── GK section: short-pass radar toggle ────────────────────────────────
+    # ── GK section: Short Pass % modal — open/close ────────────────────────
     @app.callback(
-        Output("opp-season-gk-short-open",   "data"),
-        Output("opp-season-gk-short-radar",  "style"),
-        Output("opp-season-gk-radar-row",    "style"),
-        Input("opp-season-gk-short-toggle",  "n_clicks"),
-        State("opp-season-gk-short-open",    "data"),
-        State("opp-season-gk-long-open",     "data"),
+        Output("opp-season-gk-sp-outcome-modal",       "is_open"),
+        Output("opp-season-gk-sp-outcome-modal-title", "children"),
+        Output("opp-season-gk-sp-outcome-modal-body",  "children"),
+        Input("opp-season-gk-sp-card",                 "n_clicks"),
+        State("opp-season-gk-sp-outcome-modal",        "is_open"),
+        State("opp-season-load-trigger",               "data"),
         prevent_initial_call=True,
     )
-    def _gk_toggle_short(n, short_open, long_open):
-        if not n:
+    def _gk_sp_modal(n_clicks, is_open, trigger):
+        if not n_clicks:
             return no_update, no_update, no_update
-        new_short = not short_open
-        short_style = {"display": "block"} if new_short else {"display": "none"}
-        either_open = new_short or bool(long_open)
-        row_style = (
-            {"display": "flex", "gap": "1.5rem", "marginTop": "0.5rem"}
-            if either_open else {"display": "none"}
-        )
-        return new_short, short_style, row_style
+        if is_open:
+            return False, no_update, no_update
+        from src.analytics.season_offensive_summary import compute_season_gk_buildup
+        from src.components.opponent_offensive_phase import _build_gk_outcome_donut
+        season    = (trigger or {}).get("season", "")
+        team_name = (trigger or {}).get("team", "")
+        data      = compute_season_gk_buildup(season, team_name) if season else {}
+        counts    = (data.get("metrics") or {}).get("short_granular_counts", {})
+        body      = _build_gk_outcome_donut(counts, "Short Pass", team_name, season)
+        return True, "Outcome Breakdown — Short Pass", body
 
-    # ── GK section: long-ball radar toggle ─────────────────────────────────
+    # ── GK section: Long Ball % modal — open/close ──────────────────────────
     @app.callback(
-        Output("opp-season-gk-long-open",   "data"),
-        Output("opp-season-gk-long-radar",  "style"),
-        Output("opp-season-gk-radar-row",   "style", allow_duplicate=True),
-        Input("opp-season-gk-long-toggle",  "n_clicks"),
-        State("opp-season-gk-long-open",    "data"),
-        State("opp-season-gk-short-open",   "data"),
+        Output("opp-season-gk-lb-outcome-modal",       "is_open"),
+        Output("opp-season-gk-lb-outcome-modal-title", "children"),
+        Output("opp-season-gk-lb-outcome-modal-body",  "children"),
+        Input("opp-season-gk-lb-card",                 "n_clicks"),
+        State("opp-season-gk-lb-outcome-modal",        "is_open"),
+        State("opp-season-load-trigger",               "data"),
         prevent_initial_call=True,
     )
-    def _gk_toggle_long(n, long_open, short_open):
-        if not n:
+    def _gk_lb_modal(n_clicks, is_open, trigger):
+        if not n_clicks:
             return no_update, no_update, no_update
-        new_long = not long_open
-        long_style = {"display": "block"} if new_long else {"display": "none"}
-        either_open = bool(short_open) or new_long
-        row_style = (
-            {"display": "flex", "gap": "1.5rem", "marginTop": "0.5rem"}
-            if either_open else {"display": "none"}
-        )
-        return new_long, long_style, row_style
+        if is_open:
+            return False, no_update, no_update
+        from src.analytics.season_offensive_summary import compute_season_gk_buildup
+        from src.components.opponent_offensive_phase import _build_gk_outcome_donut
+        season    = (trigger or {}).get("season", "")
+        team_name = (trigger or {}).get("team", "")
+        data      = compute_season_gk_buildup(season, team_name) if season else {}
+        counts    = (data.get("metrics") or {}).get("long_granular_counts", {})
+        body      = _build_gk_outcome_donut(counts, "Long Ball", team_name, season)
+        return True, "Outcome Breakdown — Long Ball", body
 
     # ── GK section: benchmark bar metric toggle ─────────────────────────────
     @app.callback(
@@ -526,11 +566,11 @@ def _register_season_opponent_callbacks(app):
 
     # ── FT section: Top Method modal ───────────────────────────────────────
     @app.callback(
-        Output("opp-season-ft-modal-method",      "is_open"),
-        Output("opp-season-ft-modal-method-body", "children"),
+        Output("opp-season-ft-method-modal",      "is_open"),
+        Output("opp-season-ft-method-modal-body", "children"),
         Input("opp-season-ft-method-card",        "n_clicks"),
         State("opp-season-ft-entries-store",      "data"),
-        State("opp-season-ft-modal-method",       "is_open"),
+        State("opp-season-ft-method-modal",       "is_open"),
         prevent_initial_call=True,
     )
     def _ft_modal_method(n, store, is_open):
@@ -602,11 +642,11 @@ def _register_season_opponent_callbacks(app):
 
     # ── FT section: Success Rate modal ─────────────────────────────────────
     @app.callback(
-        Output("opp-season-ft-modal-success",      "is_open"),
-        Output("opp-season-ft-modal-success-body", "children"),
+        Output("opp-season-ft-success-modal",      "is_open"),
+        Output("opp-season-ft-success-modal-body", "children"),
         Input("opp-season-ft-success-card",        "n_clicks"),
         State("opp-season-ft-entries-store",       "data"),
-        State("opp-season-ft-modal-success",       "is_open"),
+        State("opp-season-ft-success-modal",       "is_open"),
         prevent_initial_call=True,
     )
     def _ft_modal_success(n, store, is_open):
@@ -629,13 +669,13 @@ def _register_season_opponent_callbacks(app):
         ])
         return True, body
 
-    # ── FT section: Tempo modal ─────────────────────────────────────────────
+    # ── FT section: Tempo modal (unified modal pilot) ───────────────────────
     @app.callback(
-        Output("opp-season-ft-modal-tempo",      "is_open"),
-        Output("opp-season-ft-modal-tempo-body", "children"),
+        Output("opp-season-ft-tempo-modal",      "is_open"),
+        Output("opp-season-ft-tempo-modal-body", "children"),
         Input("opp-season-ft-tempo-card",        "n_clicks"),
         State("opp-season-ft-entries-store",     "data"),
-        State("opp-season-ft-modal-tempo",       "is_open"),
+        State("opp-season-ft-tempo-modal",       "is_open"),
         prevent_initial_call=True,
     )
     def _ft_modal_tempo(n, store, is_open):
@@ -651,11 +691,11 @@ def _register_season_opponent_callbacks(app):
 
     # ── FT section: Box Touches modal ───────────────────────────────────────
     @app.callback(
-        Output("opp-season-ft-modal-boxtouches",      "is_open"),
-        Output("opp-season-ft-modal-boxtouches-body", "children"),
+        Output("opp-season-ft-boxtouches-modal",      "is_open"),
+        Output("opp-season-ft-boxtouches-modal-body", "children"),
         Input("opp-season-ft-boxtouches-card",        "n_clicks"),
         State("opp-season-ft-entries-store",          "data"),
-        State("opp-season-ft-modal-boxtouches",       "is_open"),
+        State("opp-season-ft-boxtouches-modal",       "is_open"),
         prevent_initial_call=True,
     )
     def _ft_modal_boxtouches(n, store, is_open):
@@ -743,3 +783,425 @@ def _register_season_opponent_callbacks(app):
             shots = data["shots"]
             cache_set(cache_key, shots)
         return _build_goal_types_chart(shots, team_name, season)
+
+    # ── Defensive Pressing: lazy section loader ─────────────────────────────
+    @app.callback(
+        Output("opp-section-dp", "children"),
+        Input("opp-season-load-trigger", "data"),
+        prevent_initial_call=True,
+    )
+    def _opp_load_dp(trigger):
+        if not trigger:
+            return no_update
+        from src.components.opp_season_pressing_cards import build_pressing_section
+        return build_pressing_section(trigger["season"], trigger["team"])
+
+    # ── Defensive Pressing: per-zone success modals ─────────────────────────
+    # One callback per zone (high / mid / low) — matches the fixed modal IDs
+    # produced by build_unified_modal() in opp_season_pressing_cards.py.
+
+    for _zone_key in ("high", "mid", "low"):
+        _mk = _zone_key  # capture loop variable
+
+        @app.callback(
+            Output(f"opp-season-press-modal-{_mk}",       "is_open"),
+            Output(f"opp-season-press-modal-{_mk}-body",  "children"),
+            Input({"type": "opp-season-press-zone-tile", "index": _mk}, "n_clicks"),
+            State("opp-season-press-store", "data"),
+            State(f"opp-season-press-modal-{_mk}", "is_open"),
+            prevent_initial_call=True,
+        )
+        def _dp_zone_modal(n, store, is_open, _zk=_mk):
+            if not n:
+                return no_update, no_update
+            if is_open:
+                return False, no_update
+            from src.components.opp_season_pressing_cards import _zone_modal_body
+            by_zone = (store or {}).get("press_success_by_zone", {})
+            body = html.Div(
+                _zone_modal_body(_zk, by_zone),
+                style={"padding": "0.5rem"},
+            )
+            return True, body
+
+    # ── Defensive Pressing: Actions/Match league-comparison modal (C2) ──────
+    @app.callback(
+        Output("opp-season-press-modal-actions-pm",      "is_open"),
+        Output("opp-season-press-modal-actions-pm-body", "children"),
+        Input("opp-season-press-kpi-actions-pm",         "n_clicks"),
+        State("opp-season-press-store",                  "data"),
+        State("opp-season-press-modal-actions-pm",       "is_open"),
+        prevent_initial_call=True,
+    )
+    def _dp_modal_actions_pm(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        from src.components.opp_season_pressing_cards import (
+            load_league_pressing_summary, _league_table,
+        )
+        d = store or {}
+        season    = d.get("season", "")
+        team_name = d.get("team", "")
+        # season stored as "2025/2026" label — convert back to key for parquet lookup
+        season_key = season.replace("/", "_")
+        summary = load_league_pressing_summary(season_key)
+        body = _league_table(
+            summary, "actions_per_match", "Actions/M",
+            team_name, ascending=False, fmt=".1f",
+        )
+        return True, body
+
+    # ── Defensive Pressing: PPDA league-comparison modal (C4) ───────────────
+    @app.callback(
+        Output("opp-season-press-modal-ppda",      "is_open"),
+        Output("opp-season-press-modal-ppda-body", "children"),
+        Input("opp-season-press-kpi-ppda",         "n_clicks"),
+        State("opp-season-press-store",            "data"),
+        State("opp-season-press-modal-ppda",       "is_open"),
+        prevent_initial_call=True,
+    )
+    def _dp_modal_ppda(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        from src.components.opp_season_pressing_cards import (
+            load_league_pressing_summary, _league_table,
+        )
+        d = store or {}
+        season    = d.get("season", "")
+        team_name = d.get("team", "")
+        season_key = season.replace("/", "_")
+        summary = load_league_pressing_summary(season_key)
+        body = _league_table(
+            summary, "ppda_overall", "PPDA",
+            team_name, ascending=True, fmt=".2f",
+        )
+        return True, body
+
+    # ── Defensive Pressing: Press Success Rate league-comparison modal ────────
+    @app.callback(
+        Output("opp-season-press-modal-success-rate",      "is_open"),
+        Output("opp-season-press-modal-success-rate-body", "children"),
+        Input("opp-season-press-kpi-success-rate",         "n_clicks"),
+        State("opp-season-press-store",                    "data"),
+        State("opp-season-press-modal-success-rate",       "is_open"),
+        prevent_initial_call=True,
+    )
+    def _dp_modal_success_rate(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        from src.components.opp_season_pressing_cards import (
+            load_league_pressing_summary, _league_table,
+        )
+        d = store or {}
+        season    = d.get("season", "")
+        team_name = d.get("team", "")
+        season_key = season.replace("/", "_")
+        summary = load_league_pressing_summary(season_key)
+        body = _league_table(
+            summary, "press_success_rate", "Success Rate (%)",
+            team_name, ascending=False, fmt=".1f",
+        )
+        return True, body
+
+    # ── Defensive Pressing: Pressing Line (Median) league-comparison modal ────
+    @app.callback(
+        Output("opp-season-press-modal-offside-line",      "is_open"),
+        Output("opp-season-press-modal-offside-line-body", "children"),
+        Input("opp-season-press-kpi-offside-line",         "n_clicks"),
+        State("opp-season-press-store",                    "data"),
+        State("opp-season-press-modal-offside-line",       "is_open"),
+        prevent_initial_call=True,
+    )
+    def _dp_modal_offside_line(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        from src.components.opp_season_pressing_cards import (
+            load_league_pressing_summary, _league_table,
+        )
+        d = store or {}
+        season    = d.get("season", "")
+        team_name = d.get("team", "")
+        season_key = season.replace("/", "_")
+        summary = load_league_pressing_summary(season_key)
+        body = _league_table(
+            summary, "pressing_line_median", "Pressing Line (median x)",
+            team_name, ascending=False, fmt=".1f",
+        )
+        return True, body
+
+    # ── Defensive Pressing: Zone KPI league-comparison modals ────────────────
+    # One callback per zone card (own / mid / final third).
+    for _zk, _zid in (("low", "low"), ("mid", "mid"), ("high", "high")):
+        _zone_key = _zk
+        _zone_id  = _zid
+
+        @app.callback(
+            Output(f"opp-season-press-modal-zone-{_zone_id}",      "is_open"),
+            Output(f"opp-season-press-modal-zone-{_zone_id}-body", "children"),
+            Input(f"opp-season-press-kpi-zone-{_zone_id}",         "n_clicks"),
+            State("opp-season-press-store",                         "data"),
+            State(f"opp-season-press-modal-zone-{_zone_id}",       "is_open"),
+            prevent_initial_call=True,
+        )
+        def _dp_modal_zone(n, store, is_open, _zk=_zone_key):
+            if not n:
+                return no_update, no_update
+            if is_open:
+                return False, no_update
+            from src.components.opp_season_pressing_cards import (
+                load_league_pressing_summary, _zone_league_comparison_body,
+            )
+            d = store or {}
+            season    = d.get("season", "")
+            team_name = d.get("team", "")
+            season_key = season.replace("/", "_")
+            summary = load_league_pressing_summary(season_key)
+            body = html.Div(
+                _zone_league_comparison_body(summary, _zk, team_name),
+                style={"padding": "0.5rem"},
+            )
+            return True, body
+
+    # ── Defensive Castle: lazy section loader ───────────────────────────────
+    @app.callback(
+        Output("opp-section-dc", "children"),
+        Input("opp-season-load-trigger", "data"),
+        prevent_initial_call=True,
+    )
+    def _opp_load_dc(trigger):
+        if not trigger:
+            return no_update
+        from src.components.opp_season_castle_cards import build_castle_section
+        return build_castle_section(trigger["season"], trigger["team"])
+
+    # ── Defensive Castle: KPI league-comparison modals ──────────────────────
+    # Tuple: (slug, kpi_id, metric_col, ascending, fmt, share_subzone_col)
+    # share_subzone_col=None for the overall actions-pm card (no sub-zone denominator)
+    _CASTLE_KPI_MODALS = [
+        ("actions-pm",  "opp-season-castle-kpi-actions-pm",  "actions_per_match",         True, ".1f", None),
+        ("own-box",     "opp-season-castle-kpi-own-box",      "in_own_box_per_match",      True, ".1f", "in_own_box_total"),
+        ("wide-flanks", "opp-season-castle-kpi-wide-flanks",  "wide_flanks_per_match",     True, ".1f", "wide_flanks_total"),
+        ("def-edge",    "opp-season-castle-kpi-def-edge",     "def_third_edge_per_match",  True, ".1f", "def_third_edge_total"),
+    ]
+
+    _CASTLE_KPI_LABELS = {
+        "actions_per_match":         "Actions/M",
+        "in_own_box_per_match":      "Own Box/M",
+        "wide_flanks_per_match":     "Flanks/M",
+        "def_third_edge_per_match":  "Edge/M",
+    }
+
+    for _slug, _kpi_id, _metric_col, _asc, _fmt, _share_sub in _CASTLE_KPI_MODALS:
+        _s   = _slug
+        _kid = _kpi_id
+        _mc  = _metric_col
+        _a   = _asc
+        _f   = _fmt
+        _ss  = _share_sub
+
+        @app.callback(
+            Output(f"opp-season-castle-modal-{_s}",      "is_open"),
+            Output(f"opp-season-castle-modal-{_s}-body", "children"),
+            Input(_kid,                                    "n_clicks"),
+            State("opp-season-castle-store",              "data"),
+            State(f"opp-season-castle-modal-{_s}",       "is_open"),
+            prevent_initial_call=True,
+        )
+        def _castle_kpi_modal(n, store, is_open, _mc=_mc, _a=_a, _f=_f, _ss=_ss):
+            if not n:
+                return no_update, no_update
+            if is_open:
+                return False, no_update
+            from src.components.opp_season_castle_cards import (
+                load_league_castle_summary, _league_table,
+            )
+            d = store or {}
+            season    = d.get("season", "")
+            team_name = d.get("team", "")
+            season_key = season.replace("/", "_")
+            summary = load_league_castle_summary(season_key)
+            label = _CASTLE_KPI_LABELS.get(_mc, _mc.replace("_", " ").title())
+            body = _league_table(
+                summary, _mc, label, team_name,
+                ascending=_a, fmt=_f,
+                share_total_col="total_actions" if _ss else None,
+                share_subzone_col=_ss,
+            )
+            return True, body
+
+    # ── Defensive Castle: Action Types modal ────────────────────────────────
+    @app.callback(
+        Output("opp-season-castle-modal-action-types",       "is_open"),
+        Output("opp-season-castle-modal-action-types-title", "children"),
+        Output("opp-season-castle-modal-action-types-body",  "children"),
+        Input("opp-season-castle-kpi-action-types",          "n_clicks"),
+        State("opp-season-castle-store",                     "data"),
+        State("opp-season-castle-modal-action-types",        "is_open"),
+        prevent_initial_call=True,
+    )
+    def _castle_action_types_modal(n, store, is_open):
+        if not n:
+            return no_update, no_update, no_update
+        if is_open:
+            return False, no_update, no_update
+
+        d = store or {}
+        team_name       = d.get("team", "")
+        season          = d.get("season", "")
+        actions_by_type = d.get("actions_by_type", [])
+        total           = d.get("total_actions", 1) or 1
+
+        title = f"Defensive Actions by Type — {team_name}  {season}"
+
+        if not actions_by_type:
+            body = html.P("No data available.", style={"color": "#8899aa"})
+            return True, title, body
+
+        header = html.Div(
+            [
+                html.Span("Action Type", style={"flex": "1", "color": "#8899aa",
+                                                "fontSize": "0.75rem"}),
+                html.Span("Count",       style={"minWidth": "4rem", "textAlign": "right",
+                                                "color": "#8899aa", "fontSize": "0.75rem"}),
+                html.Span("% of Total",  style={"minWidth": "5rem", "textAlign": "right",
+                                                "color": "#8899aa", "fontSize": "0.75rem"}),
+            ],
+            style={"display": "flex", "padding": "6px 10px",
+                   "borderBottom": "1px solid rgba(255,255,255,0.15)", "marginBottom": "2px"},
+        )
+        rows = []
+        for action, count in actions_by_type:
+            pct = round(count / total * 100, 1)
+            rows.append(
+                html.Div(
+                    [
+                        html.Span(action, style={"flex": "1", "fontSize": "0.88rem",
+                                                 "color": "var(--text-primary)"}),
+                        html.Span(str(count), style={"minWidth": "4rem", "textAlign": "right",
+                                                      "fontSize": "0.88rem",
+                                                      "color": "var(--text-secondary)"}),
+                        html.Span(f"{pct}%",  style={"minWidth": "5rem", "textAlign": "right",
+                                                      "fontSize": "0.9rem", "fontWeight": "600",
+                                                      "color": "var(--text-primary)"}),
+                    ],
+                    style={
+                        "display": "flex", "padding": "6px 10px",
+                        "borderBottom": "1px solid rgba(255,255,255,0.05)",
+                        "alignItems": "center",
+                    },
+                )
+            )
+        body = html.Div(
+            [header, *rows],
+            style={"maxHeight": "460px", "overflowY": "auto",
+                   "borderRadius": "6px", "border": "1px solid rgba(255,255,255,0.07)"},
+        )
+        return True, title, body
+
+    # ── Chances Conceded: lazy section loader ───────────────────────────────
+    @app.callback(
+        Output("opp-section-ccc", "children"),
+        Input("opp-season-load-trigger", "data"),
+        prevent_initial_call=True,
+    )
+    def _opp_load_ccc(trigger):
+        if not trigger:
+            return no_update
+        from src.components.opp_season_chances_conceded_cards import build_cc_conceded_section
+        return build_cc_conceded_section(trigger["season"], trigger["team"])
+
+    # ── Chances Conceded: Overview KPI league-comparison modals ─────────────
+    # Tuple: (slug, kpi_id, metric_col, fmt, total_col, show_xg_total)
+    _CC_CONCEDED_KPI_MODALS = [
+        ("shots-pm",       "opp-season-cc-conceded-kpi-shots-pm",       "shots_per_match",            ".1f",  "total_shots",          False),
+        ("on-target-pm",   "opp-season-cc-conceded-kpi-on-target-pm",   "on_target_per_match",        ".1f",  "on_target_total",      False),
+        ("goals-pm",       "opp-season-cc-conceded-kpi-goals-pm",       "goals_conceded_per_match",   ".2f",  "goals_conceded_total", False),
+        ("big-chances-pm", "opp-season-cc-conceded-kpi-big-chances-pm", "big_chances_per_match",      ".1f",  "big_chances_total",    False),
+        ("xg-pm",          "opp-season-cc-conceded-kpi-xg-pm",          "xg_conceded_per_match",      ".2f",  "xg_conceded_total",    True),
+    ]
+
+    for _slug, _kpi_id, _metric_col, _fmt, _total_col, _xg_flag in _CC_CONCEDED_KPI_MODALS:
+        _s   = _slug
+        _kid = _kpi_id
+        _mc  = _metric_col
+        _f   = _fmt
+        _tc  = _total_col
+        _xg  = _xg_flag
+
+        @app.callback(
+            Output(f"opp-season-cc-conceded-modal-{_s}",      "is_open"),
+            Output(f"opp-season-cc-conceded-modal-{_s}-body", "children"),
+            Input(_kid,                                         "n_clicks"),
+            State("opp-season-cc-conceded-store",              "data"),
+            State(f"opp-season-cc-conceded-modal-{_s}",       "is_open"),
+            prevent_initial_call=True,
+        )
+        def _cc_conceded_kpi_modal(n, store, is_open, _mc=_mc, _f=_f, _tc=_tc, _xg=_xg):
+            if not n:
+                return no_update, no_update
+            if is_open:
+                return False, no_update
+            from src.components.opp_season_chances_conceded_cards import (
+                load_league_cc_conceded_summary, _league_table,
+            )
+            d = store or {}
+            season    = d.get("season", "")
+            team_name = d.get("team", "")
+            season_key = season.replace("/", "_")
+            summary = load_league_cc_conceded_summary(season_key)
+            label = _mc.replace("_", " ").replace("per match", "/M").title()
+            body = _league_table(
+                summary, _mc, label, team_name,
+                ascending=True, fmt=_f,
+                total_col=_tc,
+                show_xg_total=_xg,
+            )
+            return True, body
+
+    # ── Chances Conceded: Origin breakdown league-comparison modals ──────────
+    from src.analytics.chance_creation import ORIGIN_LABELS as _OPP_ORIGIN_LABELS
+
+    for _origin in _OPP_ORIGIN_LABELS:
+        _orig   = _origin
+        _slug   = _origin.lower().replace(" ", "_")
+        _kpi_id = f"opp-season-cc-conceded-kpi-origin-{_slug}"
+        _modal  = f"opp-season-cc-conceded-modal-origin-{_slug}"
+
+        @app.callback(
+            Output(f"{_modal}",      "is_open"),
+            Output(f"{_modal}-body", "children"),
+            Input(_kpi_id,            "n_clicks"),
+            State("opp-season-cc-conceded-store", "data"),
+            State(f"{_modal}",       "is_open"),
+            prevent_initial_call=True,
+        )
+        def _cc_conceded_origin_modal(n, store, is_open, _orig=_orig, _slug=_slug):
+            if not n:
+                return no_update, no_update
+            if is_open:
+                return False, no_update
+            from src.components.opp_season_chances_conceded_cards import (
+                load_league_cc_conceded_summary, _league_table,
+            )
+            d = store or {}
+            season    = d.get("season", "")
+            team_name = d.get("team", "")
+            season_key = season.replace("/", "_")
+            summary = load_league_cc_conceded_summary(season_key)
+            pm_col  = f"{_slug}_per_match"
+            tot_col = f"{_slug}_total"
+            body = _league_table(
+                summary, pm_col, f"{_orig}/M", team_name,
+                ascending=True, fmt=".1f",
+                total_col=tot_col,
+                show_xg_total=False,
+            )
+            return True, body

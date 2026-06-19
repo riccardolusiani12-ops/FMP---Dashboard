@@ -20,11 +20,15 @@ opponent coordinates to our own frame by reflecting: x_att = 100 − x_opp.
 
 Opta event-type IDs used
 ────────────────────────
-  Defensive actions (PPDA denominator + pressing events):
-    4  Foul
+  PPDA denominator (industry-standard 4 types):
+    4  Foul (committed)
     7  Tackle
     8  Interception
-   49  Ball Recovery
+   45  Challenge (failed tackle)
+
+  Wider defensive actions (pressing height / direction / success / heatmap):
+    4  Foul     7  Tackle     8  Interception    12  Clearance
+   44  Aerial  45  Challenge  49  Ball Recovery  74  Blocked Pass
 
   Opponent passes (PPDA numerator):
     1  Pass
@@ -90,11 +94,16 @@ LONG_BALL_LENGTH: float = 32.0
 PRESS_SUCCESS_SEC: float = 10.0
 
 # Opta type_id sets
-# Extended to match D3 for a single consistent total across the dashboard:
+# Wide set used for pressing height / direction / success / heatmap:
 #   4  Foul (committed)  7  Tackle   8  Interception  12  Clearance
 #  44  Aerial            45 Challenge (auto-fail)      49  Ball Recovery
 #  74  Blocked Pass
 DEFENSIVE_ACTION_IDS: frozenset[int] = frozenset({4, 7, 8, 12, 44, 45, 49, 74})
+
+# Narrow set used ONLY for the PPDA denominator (industry-standard definition:
+# StatsBomb / Wyscout / Opta): tackles, interceptions, fouls, challenges.
+PPDA_ACTION_IDS: frozenset[int] = frozenset({4, 7, 8, 45})
+
 OPPONENT_PASS_IDS:    frozenset[int] = frozenset({1, 2, 74})
 
 # Aerial duels (type_id=44) at x >= this threshold are in the opponent's box
@@ -256,7 +265,22 @@ def compute_ppda(team_df: pd.DataFrame, opp_df: pd.DataFrame) -> dict:
     opp_overall_excl = opp_overall[~opp_overall.apply(_is_long_ball, axis=1)]
 
     # ── Team defensive actions with our attacking x ────────────────────────────
-    def_mask   = team_df.apply(_is_def_action, axis=1)
+    # PPDA denominator uses the narrow industry-standard 4-type set (PPDA_ACTION_IDS),
+    # not the wider DEFENSIVE_ACTION_IDS used by height/direction/success/heatmap.
+    def _is_ppda_action(row: pd.Series) -> bool:
+        tid = row.get("type_id")
+        if pd.isna(tid) or int(tid) not in PPDA_ACTION_IDS:
+            return False
+        # Foul: committed side only (outcome=0)
+        if int(tid) == 4:
+            outcome = row.get("outcome", 0)
+            try:
+                return int(outcome) == 0
+            except (ValueError, TypeError):
+                return False
+        return True
+
+    def_mask   = team_df.apply(_is_ppda_action, axis=1)
     def_acts   = team_df[def_mask].copy()
 
     # For PPDA denominator we use team actions in the SAME zone (our x coordinate)
@@ -283,8 +307,11 @@ def compute_ppda(team_df: pd.DataFrame, opp_df: pd.DataFrame) -> dict:
     den_high    = len(denom_high)
     den_mid     = len(denom_mid)
 
-    # Total defensive actions (full pitch, for Section A KPI)
-    total_def_actions = len(def_acts)
+    # Total defensive actions (full pitch, for Section A KPI) — uses the wide
+    # DEFENSIVE_ACTION_IDS set, not the narrow PPDA set, so the displayed count
+    # reflects all defensive activity (clearances, aerials, recoveries, etc.).
+    wide_def_mask = team_df.apply(_is_team_def_action, axis=1)
+    total_def_actions = int(wide_def_mask.sum())
 
     return {
         "ppda_overall":           _safe_ppda(num_overall, den_overall),

@@ -35,7 +35,7 @@ from src.components.final_third_pitch import (
 from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
 from src.styling.plotly_template import apply_chart_theme
 from src.styling.pitch_utils import draw_pitch
-from src.styling.ui_components import ds_header
+from src.styling.ui_components import build_unified_modal, ds_header
 
 # ─── Shared colour constants — bound to the design system (values unchanged) ──
 _NEUTRAL   = SEMANTIC_COLORS["benchmark_neutral"]   # "#4a6274" (mirror ppda.py)
@@ -296,6 +296,152 @@ def _build_outcome_radar(granular_counts: dict, pass_type: str) -> go.Figure:
     return fig
 
 
+# Colour map reused in both the legacy radar and the new donut
+_DONUT_SLICE_META = [
+    ("P1", "Established Possession", "#4ade80"),  # light green
+    ("P2", "Reached Final Third",    "#16a34a"),  # mid green
+    ("P3", "Created a Shot",         "#14532d"),  # dark green
+    ("N1", "Possession Lost",        "#fca5a5"),  # light red
+    ("N2", "Box Entry Conceded",     "#dc2626"),  # mid red
+    ("N3", "Shot Conceded",          "#7f1d1d"),  # dark red
+]
+
+
+def _build_gk_outcome_donut(
+    granular_counts: dict,
+    metric_label: str,
+    team_name: str = "",
+    season: str = "",
+) -> html.Div:
+    """
+    Animated donut chart (hole=0.60) for the GK outcome breakdown modal.
+
+    Segments ordered P1→P2→P3→[gap]→N1→N2→N3 (positive then negative).
+    Centre hole shows combined positive rate. Legend is right of the ring.
+    Returns an html.Div containing the dcc.Graph plus a subtitle paragraph.
+    """
+    codes  = [m[0] for m in _DONUT_SLICE_META]
+    descs  = [m[1] for m in _DONUT_SLICE_META]
+    colors = [m[2] for m in _DONUT_SLICE_META]
+    raw_counts = [granular_counts.get(c, 0) for c in codes]
+    total      = sum(raw_counts) or 1
+
+    # Positive rate for centre annotation
+    pos_count = sum(granular_counts.get(c, 0) for c in ("P1", "P2", "P3"))
+    pos_rate  = f"{pos_count / total * 100:.1f}%"
+
+    # Suppress percentage label on segments below 3% to avoid clutter
+    seg_text = [
+        f"{v / total * 100:.1f}%" if v / total >= 0.03 else ""
+        for v in raw_counts
+    ]
+
+    # Build trace data: insert invisible gap segment between P3 and N1
+    all_codes   = codes[:3] + ["_gap"] + codes[3:]
+    all_descs   = descs[:3] + [""]     + descs[3:]
+    all_colors  = colors[:3] + ["rgba(0,0,0,0)"] + colors[3:]
+    all_counts  = raw_counts[:3] + [0.001] + raw_counts[3:]
+    all_text    = seg_text[:3] + [""] + seg_text[3:]
+
+    labels = [
+        f"{c} — {d}" if c != "_gap" else ""
+        for c, d in zip(all_codes, all_descs)
+    ]
+    custom = [
+        f"{d}<br>n={v}<br>{v / total * 100:.1f}%" if c != "_gap" else ""
+        for c, d, v in zip(all_codes, all_descs, all_counts)
+    ]
+
+    fig = go.Figure(
+        go.Pie(
+            labels=labels,
+            values=all_counts,
+            text=all_text,
+            customdata=custom,
+            marker=dict(
+                colors=all_colors,
+                line=dict(color="rgba(255,255,255,0.18)", width=1.5),
+            ),
+            textinfo="text",
+            textposition="outside",
+            textfont=dict(size=12, color="white"),
+            hole=0.60,
+            hovertemplate="%{customdata}<extra></extra>",
+            sort=False,
+            direction="clockwise",
+            showlegend=True,
+        ),
+        layout=dict(
+            transition=dict(duration=600, easing="cubic-in-out"),
+        ),
+    )
+
+    apply_chart_theme(fig, "dark")
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=400,
+        margin=dict(l=20, r=180, t=40, b=60),
+        annotations=[
+            dict(
+                text=f"<b>{pos_rate}</b>",
+                x=0.5, y=0.55,
+                xref="paper", yref="paper",
+                xanchor="center", yanchor="middle",
+                showarrow=False,
+                font=dict(size=20, color="white"),
+            ),
+            dict(
+                text="Positive Rate",
+                x=0.5, y=0.42,
+                xref="paper", yref="paper",
+                xanchor="center", yanchor="middle",
+                showarrow=False,
+                font=dict(size=12, color="rgba(200,200,200,0.75)"),
+            ),
+        ],
+        legend=dict(
+            orientation="v",
+            xanchor="left",   x=1.02,
+            yanchor="middle", y=0.5,
+            font=dict(size=12, color="#d0d0d0"),
+            bgcolor="rgba(13,17,23,0.7)",
+            borderwidth=0,
+            traceorder="normal",
+        ),
+        showlegend=True,
+    )
+
+    subtitle_parts = []
+    if team_name:
+        subtitle_parts.append(team_name)
+    if season:
+        subtitle_parts.append(season.replace("_", "/"))
+    subtitle_text = " · ".join(subtitle_parts) if subtitle_parts else ""
+
+    return html.Div(
+        [
+            html.Div(
+                dcc.Graph(
+                    figure=fig,
+                    config={"displayModeBar": False},
+                    style={"width": "100%", "transition": "opacity 0.4s ease"},
+                ),
+                style={"animation": "fadeSlideIn 0.5s ease-out both"},
+            ),
+            html.P(
+                subtitle_text,
+                style={
+                    "fontSize": "12px",
+                    "color": "var(--text-muted)",
+                    "textAlign": "center",
+                    "marginTop": "0.25rem",
+                },
+            ) if subtitle_text else None,
+        ]
+    )
+
+
 def _build_gk_zone_pitch(events: list[dict]) -> go.Figure:
     """
     18-zone pitch showing count of GK distributions whose endpoint (recv_x/y)
@@ -472,135 +618,82 @@ def build_gk_section(season: str, team_name: str) -> html.Div:
             _mini_kpi("GK Possessions", m["total"],
                       f"{m['avg_per_match']}/match avg",
                       "#3b82f6", "bi-person-fill"),
-            # Short Pass % card with expand toggle
+            # Short Pass % card — clickable, opens outcome breakdown modal
             html.Div(
                 [
                     html.Div(
-                        [
-                            html.Div(
-                                html.I(className="bi bi-arrow-right",
-                                       style={"color": "#22c55e", "fontSize": "1.3rem"}),
-                                className="kpi-icon",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span("Short Pass %", className="kpi-label"),
-                                    html.Span(f"{m['short_pct']}%", className="kpi-value"),
-                                    html.Span(f"{m['short_success_rate']}% success",
-                                              className="kpi-subtitle",
-                                              style={"color": "#22c55e"}),
-                                ],
-                                className="kpi-text",
-                            ),
-                        ],
-                        style={"display": "flex", "alignItems": "center", "flex": "1"},
+                        html.I(className="bi bi-arrow-right",
+                               style={"color": "#22c55e", "fontSize": "1.3rem"}),
+                        className="kpi-icon",
                     ),
-                    html.Span(
-                        html.I(className="bi bi-graph-up",
-                               style={"fontSize": "0.85rem"}),
-                        id="opp-season-gk-short-toggle",
-                        n_clicks=0,
-                        title="Show outcome breakdown",
-                        style={
-                            "cursor": "pointer", "padding": "3px 6px",
-                            "borderRadius": "12px",
-                            "background": "rgba(34,197,94,0.12)",
-                            "color": "#22c55e",
-                            "display": "inline-flex", "alignItems": "center",
-                            "alignSelf": "flex-start",
-                        },
+                    html.Div(
+                        [
+                            html.Span("Short Pass %", className="kpi-label"),
+                            html.Span(f"{m['short_pct']}%", className="kpi-value"),
+                            html.Span(f"{m['short_success_rate']}% success",
+                                      className="kpi-subtitle",
+                                      style={"color": "#22c55e"}),
+                        ],
+                        className="kpi-text",
+                    ),
+                    html.I(
+                        className="bi bi-box-arrow-up-right",
+                        style={"fontSize": "0.65rem", "color": "rgba(255,255,255,0.25)",
+                               "position": "absolute", "top": "6px", "right": "8px"},
                     ),
                 ],
                 className="kpi-card",
-                style={"display": "flex", "alignItems": "center", "gap": "6px",
-                       "flexWrap": "nowrap"},
+                id="opp-season-gk-sp-card",
+                n_clicks=0,
+                style={"cursor": "pointer", "position": "relative"},
             ),
-            # Long Ball % card with expand toggle
+            # Long Ball % card — clickable, opens outcome breakdown modal
             html.Div(
                 [
                     html.Div(
-                        [
-                            html.Div(
-                                html.I(className="bi bi-arrow-up-right",
-                                       style={"color": "#f97316", "fontSize": "1.3rem"}),
-                                className="kpi-icon",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span("Long Ball %", className="kpi-label"),
-                                    html.Span(f"{m['long_pct']}%", className="kpi-value"),
-                                    html.Span(f"{m['long_success_rate']}% success",
-                                              className="kpi-subtitle",
-                                              style={"color": "#f97316"}),
-                                ],
-                                className="kpi-text",
-                            ),
-                        ],
-                        style={"display": "flex", "alignItems": "center", "flex": "1"},
+                        html.I(className="bi bi-arrow-up-right",
+                               style={"color": "#f97316", "fontSize": "1.3rem"}),
+                        className="kpi-icon",
                     ),
-                    html.Span(
-                        html.I(className="bi bi-graph-up",
-                               style={"fontSize": "0.85rem"}),
-                        id="opp-season-gk-long-toggle",
-                        n_clicks=0,
-                        title="Show outcome breakdown",
-                        style={
-                            "cursor": "pointer", "padding": "3px 6px",
-                            "borderRadius": "12px",
-                            "background": "rgba(249,115,22,0.12)",
-                            "color": "#f97316",
-                            "display": "inline-flex", "alignItems": "center",
-                            "alignSelf": "flex-start",
-                        },
+                    html.Div(
+                        [
+                            html.Span("Long Ball %", className="kpi-label"),
+                            html.Span(f"{m['long_pct']}%", className="kpi-value"),
+                            html.Span(f"{m['long_success_rate']}% success",
+                                      className="kpi-subtitle",
+                                      style={"color": "#f97316"}),
+                        ],
+                        className="kpi-text",
+                    ),
+                    html.I(
+                        className="bi bi-box-arrow-up-right",
+                        style={"fontSize": "0.65rem", "color": "rgba(255,255,255,0.25)",
+                               "position": "absolute", "top": "6px", "right": "8px"},
                     ),
                 ],
                 className="kpi-card",
-                style={"display": "flex", "alignItems": "center", "gap": "6px",
-                       "flexWrap": "nowrap"},
+                id="opp-season-gk-lb-card",
+                n_clicks=0,
+                style={"cursor": "pointer", "position": "relative"},
             ),
         ],
         className="team-kpi-row",
     )
 
-    # Inline radar charts (hidden by default, toggled by callbacks)
-    short_radar_fig = _build_outcome_radar(m["short_granular_counts"], "short")
-    long_radar_fig  = _build_outcome_radar(m["long_granular_counts"],  "long")
-
-    radar_row = html.Div(
-        [
-            # Short Pass radar panel
-            html.Div(
-                dcc.Graph(
-                    id="opp-season-gk-short-radar",
-                    figure=short_radar_fig,
-                    config={"displayModeBar": False},
-                    style={"display": "none"},
-                ),
-                id="opp-season-gk-short-radar-wrap",
-                style={"flex": "1", "minWidth": "0"},
-            ),
-            # Long Ball radar panel
-            html.Div(
-                dcc.Graph(
-                    id="opp-season-gk-long-radar",
-                    figure=long_radar_fig,
-                    config={"displayModeBar": False},
-                    style={"display": "none"},
-                ),
-                id="opp-season-gk-long-radar-wrap",
-                style={"flex": "1", "minWidth": "0"},
-            ),
-        ],
-        id="opp-season-gk-radar-row",
-        style={"display": "none", "gap": "1.5rem", "marginTop": "0.5rem"},
+    # Modals for outcome breakdown (body populated by callbacks)
+    sp_modal = build_unified_modal(
+        "opp-season-gk-sp-outcome-modal",
+        "opp-season-gk-sp-outcome-modal-title",
+        "opp-season-gk-sp-outcome-modal-body",
+        title="Outcome Breakdown — Short Pass",
+        size="lg",
     )
-
-    # Stores for toggle state
-    stores = html.Div(
-        [
-            dcc.Store(id="opp-season-gk-short-open", data=False),
-            dcc.Store(id="opp-season-gk-long-open",  data=False),
-        ]
+    lb_modal = build_unified_modal(
+        "opp-season-gk-lb-outcome-modal",
+        "opp-season-gk-lb-outcome-modal-title",
+        "opp-season-gk-lb-outcome-modal-body",
+        title="Outcome Breakdown — Long Ball",
+        size="lg",
     )
 
     # ── Zone pitch (replaces scatter) ────────────────────────────────────────
@@ -662,9 +755,9 @@ def build_gk_section(season: str, team_name: str) -> html.Div:
                 subtitle="Where goal kicks end up, distribution outcomes and "
                          "league benchmarks",
             ),
-            stores,
+            sp_modal,
+            lb_modal,
             kpi_row,
-            radar_row,
             _two_col(
                 # pitch-dark-container: dark pitch stays dark in light mode
                 # (skip-list convention; Phase 4 audit fix)
@@ -1155,31 +1248,6 @@ def _build_ft_build_depth(entries: list[dict]) -> go.Figure:
     return fig
 
 
-def _ft_modal(modal_id: str, title: str, body_id: str) -> dbc.Modal:
-    """Reusable scrollable modal shell for FT section drilldowns."""
-    return dbc.Modal(
-        [
-            dbc.ModalHeader(
-                dbc.ModalTitle(title, style={"fontSize": "1rem", "color": "#f0f0f0"}),
-                close_button=True,
-                style={"backgroundColor": "rgba(15,25,35,0.97)",
-                       "borderBottom": "1px solid rgba(255,255,255,0.1)"},
-            ),
-            dbc.ModalBody(
-                html.Div(id=body_id),
-                style={"backgroundColor": "rgba(15,25,35,0.97)",
-                       "padding": "1.25rem"},
-            ),
-        ],
-        id=modal_id,
-        is_open=False,
-        scrollable=True,
-        size="lg",
-        backdrop=True,
-        style={"color": "#f0f0f0"},
-    )
-
-
 def _clickable_kpi(label: str, value, subtitle: str, color: str, icon: str,
                    card_id: str) -> html.Div:
     """KPI card identical to _mini_kpi but with an id, n_clicks, and pointer cursor."""
@@ -1273,18 +1341,22 @@ def build_ft_section(season: str, team_name: str) -> html.Div:
     )
 
     # ── Modals ────────────────────────────────────────────────────────────────
-    modal_method     = _ft_modal("opp-season-ft-modal-method",
-                                 "Entry Method Breakdown",
-                                 "opp-season-ft-modal-method-body")
-    modal_success    = _ft_modal("opp-season-ft-modal-success",
-                                 "Success Rate by Entry Method",
-                                 "opp-season-ft-modal-success-body")
-    modal_tempo      = _ft_modal("opp-season-ft-modal-tempo",
-                                 "Entry Timing — 15-min Bands",
-                                 "opp-season-ft-modal-tempo-body")
-    modal_boxtouches = _ft_modal("opp-season-ft-modal-boxtouches",
-                                 "Opp. Box Touches / Match — League Ranking",
-                                 "opp-season-ft-modal-boxtouches-body")
+    modal_method     = build_unified_modal("opp-season-ft-method-modal",
+                                           "opp-season-ft-method-modal-title",
+                                           "opp-season-ft-method-modal-body",
+                                           title="Entry Method Breakdown")
+    modal_success    = build_unified_modal("opp-season-ft-success-modal",
+                                           "opp-season-ft-success-modal-title",
+                                           "opp-season-ft-success-modal-body",
+                                           title="Success Rate by Entry Method")
+    modal_tempo      = build_unified_modal("opp-season-ft-tempo-modal",
+                                           "opp-season-ft-tempo-modal-title",
+                                           "opp-season-ft-tempo-modal-body",
+                                           title="Entry Timing — 15-min Bands")
+    modal_boxtouches = build_unified_modal("opp-season-ft-boxtouches-modal",
+                                           "opp-season-ft-boxtouches-modal-title",
+                                           "opp-season-ft-boxtouches-modal-body",
+                                           title="Opp. Box Touches / Match — League Ranking")
 
     # ── Charts ────────────────────────────────────────────────────────────────
     fig_pitch   = _build_ft_zone_pitch(data["entries"])
@@ -1523,61 +1595,33 @@ def build_cc_section(season: str, team_name: str) -> html.Div:
     )
 
     # ── xG modal ───────────────────────────────────────────────────────────
-    xg_modal = dbc.Modal(
-        [
-            dbc.ModalHeader(
-                dbc.ModalTitle(
-                    "xG per Match — All Teams",
-                    style={"fontSize": "1rem", "color": "#f0f0f0"},
-                ),
-                close_button=True,
-                style={"backgroundColor": "rgba(15,25,35,0.97)",
-                       "borderBottom": "1px solid rgba(255,255,255,0.1)"},
-            ),
-            dbc.ModalBody(
-                dcc.Graph(
-                    id="opp-season-cc-xg-modal-graph",
-                    style={"height": "520px"},
-                    config={"displayModeBar": False},
-                ),
-                style={"backgroundColor": "rgba(15,25,35,0.97)",
-                       "padding": "1.25rem"},
-            ),
-        ],
-        id="opp-season-cc-xg-modal",
-        is_open=False,
+    # Persistent Graph body: a second callback fills the figure when is_open
+    # flips (two-callback populate pattern), so the Graph must live in the
+    # layout permanently rather than being callback-injected.
+    xg_modal = build_unified_modal(
+        "opp-season-cc-xg-modal",
+        "opp-season-cc-xg-modal-title",
+        "opp-season-cc-xg-modal-body",
+        title="xG per Match — All Teams",
         size="xl",
-        centered=True,
-        style={"color": "#f0f0f0"},
+        body=dcc.Graph(
+            id="opp-season-cc-xg-modal-graph",
+            style={"height": "520px"},
+            config={"displayModeBar": False},
+        ),
     )
 
     # ── Goal Types modal ───────────────────────────────────────────────────
-    goal_types_modal = dbc.Modal(
-        [
-            dbc.ModalHeader(
-                dbc.ModalTitle(
-                    "Goal Types — Season",
-                    style={"fontSize": "1rem", "color": "#f0f0f0"},
-                ),
-                close_button=True,
-                style={"backgroundColor": "rgba(15,25,35,0.97)",
-                       "borderBottom": "1px solid rgba(255,255,255,0.1)"},
-            ),
-            dbc.ModalBody(
-                dcc.Graph(
-                    id="opp-season-cc-goal-types-graph",
-                    style={"height": "460px"},
-                    config={"displayModeBar": False},
-                ),
-                style={"backgroundColor": "rgba(15,25,35,0.97)",
-                       "padding": "1.25rem"},
-            ),
-        ],
-        id="opp-season-cc-goal-types-modal",
-        is_open=False,
-        size="lg",
-        centered=True,
-        style={"color": "#f0f0f0"},
+    goal_types_modal = build_unified_modal(
+        "opp-season-cc-goal-types-modal",
+        "opp-season-cc-goal-types-modal-title",
+        "opp-season-cc-goal-types-modal-body",
+        title="Goal Types — Season",
+        body=dcc.Graph(
+            id="opp-season-cc-goal-types-graph",
+            style={"height": "460px"},
+            config={"displayModeBar": False},
+        ),
     )
 
     # ── Attack Origin Zones — Season Aggregate ────────────────────────────

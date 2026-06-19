@@ -34,6 +34,7 @@ from src.analytics.data_loader import (
     load_goal_distribution,
     load_team_average_age,
 )
+from src.styling.ui_components import build_unified_modal
 
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
@@ -760,9 +761,11 @@ def register_team_detail_callbacks(app):
         kpi_cards = html.Div(
             [
                 _stat_card("Goals Scored", str(gf), f"xG: {xg_val:.1f}",
-                           "bi-bullseye", _GREEN),
+                           "bi-bullseye", _GREEN,
+                           interval_button_id="td-scored-interval-open"),
                 _stat_card("Goals Conceded", str(ga), f"xGC: {xgc_val:.1f}",
-                           "bi-shield-x", _RED),
+                           "bi-shield-x", _RED,
+                           interval_button_id="td-conceded-interval-open"),
                 _stat_card("xG", f"{xg_val:.1f}",
                            f"{'↑' if xg_over >= 0 else '↓'} {abs(xg_over):.1f} vs actual",
                            "bi-graph-up-arrow",
@@ -805,8 +808,10 @@ def register_team_detail_callbacks(app):
 
         return html.Div(
             [
-                _stat_card("Goals Scored", str(gf), "", "bi-bullseye", _GREEN),
-                _stat_card("Goals Conceded", str(ga), "", "bi-shield-x", _RED),
+                _stat_card("Goals Scored", str(gf), "", "bi-bullseye", _GREEN,
+                           interval_button_id="td-scored-interval-open"),
+                _stat_card("Goals Conceded", str(ga), "", "bi-shield-x", _RED,
+                           interval_button_id="td-conceded-interval-open"),
                 html.Div(
                     [
                         html.I(className="bi bi-info-circle me-1",
@@ -824,9 +829,25 @@ def register_team_detail_callbacks(app):
         )
 
     def _stat_card(
-        title: str, value: str, subtitle: str, icon: str, color: str
+        title: str, value: str, subtitle: str, icon: str, color: str,
+        interval_button_id: str | None = None,
     ) -> html.Div:
         """Create a stat card for the goals/xG block."""
+        text_children = [
+            html.Span(title, className="kpi-label"),
+            html.Span(value, className="kpi-value", style={"color": color}),
+            html.Small(subtitle, className="kpi-subtitle text-muted")
+            if subtitle else None,
+        ]
+        if interval_button_id:
+            text_children.append(
+                html.Button(
+                    [html.I(className="bi bi-clock-history me-1"), "View Breakdown"],
+                    id=interval_button_id,
+                    n_clicks=0,
+                    className="kpi-interval-btn",
+                )
+            )
         children = [
             html.Div(
                 html.I(className=f"bi {icon}"),
@@ -834,17 +855,12 @@ def register_team_detail_callbacks(app):
                 style={"color": color},
             ),
             html.Div(
-                [
-                    html.Span(title, className="kpi-label"),
-                    html.Span(value, className="kpi-value", style={"color": color}),
-                    html.Small(subtitle, className="kpi-subtitle text-muted")
-                    if subtitle else None,
-                ],
+                [c for c in text_children if c is not None],
                 className="kpi-text",
             ),
         ]
         return html.Div(
-            [c for c in children if c is not None],
+            children,
             className="kpi-card",
         )
 
@@ -904,44 +920,137 @@ def register_team_detail_callbacks(app):
         return fig
 
     # ══════════════════════════════════════════════════════════
-    # GOAL DISTRIBUTION (15-MIN INTERVALS) CALLBACK
+    # GOAL DISTRIBUTION MODALS — OPEN / CLOSE
     # ══════════════════════════════════════════════════════════
 
     @app.callback(
-        Output("goal-distribution-block", "children"),
-        Input("team-season-selector", "value"),
-        Input("team-context", "data"),
-        prevent_initial_call=False,
+        Output("td-scored-interval-modal", "is_open"),
+        Input("td-scored-interval-open", "n_clicks"),
+        State("td-scored-interval-modal", "is_open"),
+        prevent_initial_call=True,
     )
-    def update_goal_distribution(selected_season: str, context: dict):
-        """Build the goals by 15-minute intervals visual block."""
-        team = context.get("team", "")
+    def toggle_scored_interval_modal(n_clicks, is_open):
+        if n_clicks:
+            return not is_open
+        return is_open
+
+    @app.callback(
+        Output("td-conceded-interval-modal", "is_open"),
+        Input("td-conceded-interval-open", "n_clicks"),
+        State("td-conceded-interval-modal", "is_open"),
+        prevent_initial_call=True,
+    )
+    def toggle_conceded_interval_modal(n_clicks, is_open):
+        if n_clicks:
+            return not is_open
+        return is_open
+
+    # ── Modal body: Goals Scored intervals ──
+    @app.callback(
+        Output("td-scored-interval-modal-body", "children"),
+        Input("td-scored-interval-open", "n_clicks"),
+        State("team-season-selector", "value"),
+        State("team-context", "data"),
+        prevent_initial_call=True,
+    )
+    def load_scored_interval_modal(n_clicks, selected_season, context):
+        if not n_clicks:
+            return no_update
+        team = (context or {}).get("team", "")
         if not team or not selected_season:
             return html.P("Select a team and season.", className="text-muted")
-
         dist_df = load_goal_distribution(team, selected_season)
-
         if dist_df is None or dist_df.empty:
-            return html.Div(
-                [
-                    html.I(
-                        className="bi bi-info-circle me-2",
-                        style={"fontSize": "1.2rem", "opacity": 0.5},
-                    ),
-                    html.P(
-                        "No goal distribution data available for this season.",
-                        className="text-muted mb-0",
-                    ),
-                ],
-                style={
-                    "display": "flex",
-                    "alignItems": "center",
-                    "justifyContent": "center",
-                    "padding": "2rem",
-                },
+            return html.P("No data available.", className="text-muted")
+        return _build_single_metric_card(dist_df, metric="scored")
+
+    # ── Modal body: Goals Conceded intervals ──
+    @app.callback(
+        Output("td-conceded-interval-modal-body", "children"),
+        Input("td-conceded-interval-open", "n_clicks"),
+        State("team-season-selector", "value"),
+        State("team-context", "data"),
+        prevent_initial_call=True,
+    )
+    def load_conceded_interval_modal(n_clicks, selected_season, context):
+        if not n_clicks:
+            return no_update
+        team = (context or {}).get("team", "")
+        if not team or not selected_season:
+            return html.P("Select a team and season.", className="text-muted")
+        dist_df = load_goal_distribution(team, selected_season)
+        if dist_df is None or dist_df.empty:
+            return html.P("No data available.", className="text-muted")
+        return _build_single_metric_card(dist_df, metric="conceded")
+
+    def _build_single_metric_card(dist_df, metric: str) -> html.Div:
+        """Render interval tiles for a single metric ('scored' or 'conceded')."""
+        scored_hex = SEMANTIC_COLORS["goals_scored"]
+        conceded_hex = SEMANTIC_COLORS["goals_conceded"]
+
+        if metric == "scored":
+            hex_color = scored_hex
+            rgb = _hex_to_rgb(scored_hex)
+            vals = dist_df["scored"].tolist()
+            icon = "bi-bullseye"
+            row_label = "Scored"
+            noun = "scored"
+        else:
+            hex_color = conceded_hex
+            rgb = _hex_to_rgb(conceded_hex)
+            vals = dist_df["conceded"].tolist()
+            icon = "bi-shield-x"
+            row_label = "Conceded"
+            noun = "conceded"
+
+        bins = dist_df["bin"].tolist()
+        total = sum(vals)
+        max_val = max(vals) if vals else 0
+
+        tiles = []
+        for b, val in zip(bins, vals):
+            intensity = (0.25 + 0.75 * (val / max_val)) if max_val > 0 else 0.25
+            pct_str = f"{(val / total * 100):.0f}% of total" if total > 0 else ""
+            tiles.append(
+                html.Div(
+                    [
+                        html.Span(str(val), className="gd-tile-value"),
+                        html.Span(b, className="gd-tile-label"),
+                    ],
+                    className="gd-tile",
+                    style={"backgroundColor": f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{intensity:.2f})"},
+                    title=f"{b}: {val} goal{'s' if val != 1 else ''} {noun}"
+                          + (f" ({pct_str})" if pct_str else ""),
+                )
             )
 
-        return _build_goal_distribution_card(dist_df, team)
+        return html.Div(
+            [
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.I(className=f"bi {icon}",
+                                       style={"color": hex_color, "fontSize": "1rem"}),
+                                html.Span(row_label, className="gd-row-label",
+                                          style={"color": hex_color}),
+                            ],
+                            className="gd-row-header",
+                        ),
+                        html.Div(tiles, className="gd-tiles-row"),
+                    ],
+                    className="gd-row",
+                ),
+                html.Div(
+                    html.Span(
+                        f"{total} {noun}",
+                        style={"color": hex_color, "fontWeight": "600"},
+                    ),
+                    className="gd-summary",
+                ),
+            ],
+            className="gd-card-inner",
+        )
 
     def _build_goal_distribution_card(
         dist_df, team: str

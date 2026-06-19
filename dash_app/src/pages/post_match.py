@@ -8,6 +8,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from src.config import AVAILABLE_SEASONS
+from src.styling.ui_components import unified_dropdown
 
 
 def layout() -> html.Div:
@@ -56,12 +57,11 @@ def layout() -> html.Div:
                             html.Div(
                                 [
                                     html.Label("Season", className="filter-label"),
-                                    dcc.Dropdown(
-                                        id="ma-season-selector",
-                                        options=season_opts,
+                                    unified_dropdown(
+                                        "ma-season-selector",
+                                        season_opts,
                                         value=default_season,
                                         clearable=False,
-                                        className="season-dropdown",
                                     ),
                                 ],
                                 className="season-filter",

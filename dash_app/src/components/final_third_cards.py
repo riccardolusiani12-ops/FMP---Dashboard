@@ -14,7 +14,7 @@ from dash import html, dcc
 import plotly.graph_objects as go
 
 from src.styling.plotly_template import apply_chart_theme
-from src.styling.ui_components import ds_header
+from src.styling.ui_components import build_unified_modal, ds_header
 
 from src.components.final_third_pitch import (
     METHOD_COLORS,
@@ -82,13 +82,14 @@ def _mini_kpi(label: str, value, subtitle: str, color: str, icon: str) -> html.D
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TEMPO CARD — with 15-minute windows dropdown
+# TEMPO CARD — clickable KPI, opens 15-minute windows modal
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _tempo_card(m: dict) -> html.Div:
+def _tempo_card(m: dict, prefix: str = "ma") -> html.Div:
     """
     Render the Tempo KPI card with passes per minute.
-    Includes a Details/Summary dropdown showing 15-minute window breakdown.
+    Clicking the card opens a unified modal with the 15-minute window
+    breakdown (converted from the old inline <details> expansion).
     """
     ppm = m.get("passes_per_minute", 0.0)
     windows = m.get("tempo_windows", [])
@@ -146,64 +147,51 @@ def _tempo_card(m: dict) -> html.Div:
             )
         )
 
-    return html.Div(
+    trigger = html.Div(
         [
-            html.Details(
+            html.Div(
+                html.I(className="bi bi-lightning-fill",
+                       style={"color": "#f59e0b", "fontSize": "1.3rem"}),
+                className="kpi-icon",
+            ),
+            html.Div(
                 [
-                    html.Summary(
-                        html.Div(
-                            [
-                                html.Div(
-                                    html.I(className="bi bi-lightning-fill",
-                                           style={"color": "#f59e0b", "fontSize": "1.3rem"}),
-                                    className="kpi-icon",
-                                ),
-                                html.Div(
-                                    [
-                                        html.Span("Tempo", className="kpi-label"),
-                                        html.Span(f"{ppm}", className="kpi-value"),
-                                        html.Span("passes per minute (qual. poss.)",
-                                                  className="kpi-subtitle",
-                                                  style={"color": "#f59e0b"}),
-                                    ],
-                                    className="kpi-text",
-                                ),
-                            ],
-                            style={
-                                "display": "flex",
-                                "alignItems": "center",
-                                "cursor": "pointer",
-                                "width": "100%",
-                            },
-                        ),
-                        style={
-                            "cursor": "pointer",
-                            "listStyle": "none",
-                        },
-                    ),
-                    html.Div(
-                        window_items,
-                        style={
-                            "marginTop": "8px",
-                            "paddingTop": "8px",
-                            "borderTop": "1px solid var(--border-light)",
-                        },
-                    ) if window_items else html.Div(),
+                    html.Span("Tempo", className="kpi-label"),
+                    html.Span(f"{ppm}", className="kpi-value"),
+                    html.Span("passes per minute (qual. poss.)",
+                              className="kpi-subtitle",
+                              style={"color": "#f59e0b"}),
                 ],
-                className="kpi-card",
-                style={
-                    "cursor": "pointer",
-                },
+                className="kpi-text",
+            ),
+            html.I(
+                className="bi bi-box-arrow-up-right",
+                style={"fontSize": "0.65rem", "color": "rgba(255,255,255,0.25)",
+                       "position": "absolute", "top": "6px", "right": "8px"},
             ),
         ],
+        className="kpi-card",
+        id=f"{prefix}-tempo-modal-trigger",
+        n_clicks=0,
+        style={"cursor": "pointer", "position": "relative"},
     )
+
+    modal = build_unified_modal(
+        f"{prefix}-tempo-modal",
+        f"{prefix}-tempo-modal-title",
+        f"{prefix}-tempo-modal-body",
+        title="Tempo — 15-Minute Windows",
+        body=(html.Div(window_items) if window_items
+              else html.P("No data.", style={"color": "#8899aa"})),
+    )
+
+    return html.Div([trigger, modal])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # POSSESSION MODAL HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_MODAL_BG     = "rgba(15,25,35,0.97)"
 _PURPLE       = "#8b5cf6"
 _PURPLE_DARK  = "#6d28d9"
 _PURPLE_LIGHT = "#a78bfa"
@@ -479,30 +467,15 @@ def _possession_modal(data: dict, prefix: str = "ma") -> dbc.Modal:
                "padding": "1.25rem"},
     )
 
-    return dbc.Modal(
-        [
-            dbc.ModalHeader(
-                dbc.ModalTitle("Possession Detail",
-                               style={"fontSize": "1rem", "color": "#f0f0f0",
-                                      "fontWeight": "600"}),
-                close_button=True,
-                style={"backgroundColor": _MODAL_BG,
-                       "borderBottom": "1px solid rgba(255,255,255,0.1)"},
-            ),
-            dbc.ModalBody(
-                html.Div(
-                    [bands_section, area_section],
-                    style={"display": "flex", "flexDirection": "column"},
-                ),
-                style={"backgroundColor": _MODAL_BG, "padding": "1.25rem"},
-            ),
-        ],
-        id=f"{prefix}-possession-modal",
-        is_open=False,
-        scrollable=True,
-        size="lg",
-        backdrop=True,
-        style={"color": "#f0f0f0"},
+    return build_unified_modal(
+        f"{prefix}-possession-modal",
+        f"{prefix}-possession-modal-title",
+        f"{prefix}-possession-modal-body",
+        title="Possession Detail",
+        body=html.Div(
+            [bands_section, area_section],
+            style={"display": "flex", "flexDirection": "column"},
+        ),
     )
 
 
@@ -567,7 +540,7 @@ def _section_possession(m: dict, prefix: str = "ma") -> html.Div:
                         "total touches in penalty area",
                         "#ef4444", "bi-box-arrow-in-down-right",
                     ),
-                    _tempo_card(m),
+                    _tempo_card(m, prefix=prefix),
                 ],
                 className="team-kpi-row",
             ),

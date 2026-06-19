@@ -7,6 +7,8 @@ Routes: /serie-a/team/<team-slug>
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from src.styling.ui_components import build_unified_modal
+
 from src.config import AVAILABLE_SEASONS
 
 
@@ -268,26 +270,6 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                         className="chart-section",
                     ),
 
-                    # Section: Goal Distribution by 15-Minute Windows
-                    html.Div(
-                        [
-                            _ds_header(
-                                "Timing", "bi-clock-history",
-                                "Goals by 15-Minute Intervals",
-                                "When goals are scored and conceded across the match",
-                            ),
-                            dcc.Loading(
-                                html.Div(
-                                    id="goal-distribution-block",
-                                    className="goal-distribution-block",
-                                ),
-                                type="circle",
-                                color="#8a1f33",
-                            ),
-                        ],
-                        className="chart-section",
-                    ),
-
                     _placeholder_section(
                         "Expected Threat (xT)",
                         "bi-lightning-fill",
@@ -300,6 +282,21 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                     ),
                 ],
                 className="team-charts-container",
+            ),
+            # Modals: Goals by 15-Minute Intervals (one per metric)
+            build_unified_modal(
+                modal_id="td-scored-interval-modal",
+                title_id="td-scored-interval-modal-title",
+                body_id="td-scored-interval-modal-body",
+                title="Goals Scored — 15-Minute Intervals",
+                size="lg",
+            ),
+            build_unified_modal(
+                modal_id="td-conceded-interval-modal",
+                title_id="td-conceded-interval-modal-title",
+                body_id="td-conceded-interval-modal-body",
+                title="Goals Conceded — 15-Minute Intervals",
+                size="lg",
             ),
         ],
         # "team-overview" scopes the Phase 1 design-system restyle to this page

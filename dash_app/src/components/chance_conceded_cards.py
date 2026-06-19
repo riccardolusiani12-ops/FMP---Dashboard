@@ -399,19 +399,6 @@ def _section_origin_grid(shots_detail: list) -> html.Div:
                 font=dict(size=9, color="rgba(255,255,255,0.18)"),
             )
 
-    # Half-space dashed lines
-    for y_val in _HS_Y_VALS:
-        fig.add_shape(
-            type="line", x0=0, x1=100, y0=y_val, y1=y_val,
-            line=dict(color="rgba(255,255,255,0.20)", width=1, dash="dash"),
-            layer="below",
-        )
-    for hs_y in (22.5, 77.5):
-        fig.add_annotation(
-            x=33.33, y=hs_y, text="half space", showarrow=False,
-            font=dict(size=9, color="rgba(255,255,255,0.30)"),
-        )
-
     # Zone grid lines
     for y_val in (33.33, 66.67):
         fig.add_shape(type="line", x0=0, x1=100, y0=y_val, y1=y_val,

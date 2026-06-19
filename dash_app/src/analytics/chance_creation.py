@@ -634,7 +634,79 @@ def _check_high_regain(
     # Time check: shot within 8s of the turnover
     turnover_sec = _match_sec(last_evt)
     elapsed = shot_sec - turnover_sec
-    return 0 <= elapsed <= COUNTER_MAX_SEC
+    if not (0 <= elapsed <= COUNTER_MAX_SEC):
+        return False
+
+    # Extended set-piece guard: walk back further possessions within the 8s
+    # window.  If the shooting team had a set-piece possession before the
+    # opponent's brief "turnover", then the opponent never genuinely regained
+    # the ball — they just briefly touched a ball that was already in the
+    # shooting team's set-piece possession.
+    # Example: shooting team takes a free kick → opponent briefly challenges
+    # (poss_id - 1, outcome=0) → shooting team scores.  The opponent's brief
+    # challenge looks like a turnover in the attacking third, but the ball was
+    # never genuinely theirs.
+    lookback_id = prev_poss_id - 1
+    while lookback_id >= 0:
+        lb_poss = match_df[match_df["poss_id"] == lookback_id]
+        if lb_poss.empty:
+            break
+        # Check timing: use first event of this possession
+        lb_first_evt = None
+        for i in range(len(lb_poss)):
+            lb_row = lb_poss.iloc[i]
+            lb_et = str(lb_row.get("event_type", lb_row.get("event", ""))).strip().lower()
+            if lb_et not in NON_PLAY_EVENTS and lb_et != "":
+                lb_first_evt = lb_row
+                break
+        if lb_first_evt is None:
+            break
+        lb_sec = _match_sec(lb_first_evt)
+        if shot_sec - lb_sec > COUNTER_MAX_SEC:
+            break  # Too far back — outside the 8s window
+        lb_team = str(lb_poss["team_name"].dropna().iloc[0]).strip().lower() \
+            if not lb_poss["team_name"].dropna().empty else ""
+        if lb_team == shot_team:
+            # Shooting team had possession within the 8s window.
+            # If it was a set-piece, the opponent never genuinely held the ball.
+            lb_origin = str(lb_poss["poss_origin"].iloc[0]) \
+                if "poss_origin" in lb_poss.columns else ""
+            if lb_origin in SET_PIECE_ORIGINS:
+                log.debug(
+                    "High regain Case B suppressed: shooting team had a "
+                    "%s set piece at poss_id=%d within 8s window",
+                    lb_origin, lookback_id,
+                )
+                return False
+            # Shooting team had an open-play possession before the opponent's
+            # brief challenge.  Check if they retained the ball (not a genuine
+            # loss) — find last meaningful event in their possession.
+            lb_last_evt = None
+            for i in range(len(lb_poss) - 1, -1, -1):
+                lb_row = lb_poss.iloc[i]
+                lb_et = str(lb_row.get("event_type", lb_row.get("event", ""))).strip().lower()
+                if lb_et not in NON_PLAY_EVENTS and lb_et != "":
+                    lb_last_evt = lb_row
+                    break
+            if lb_last_evt is not None:
+                lb_et_str = str(lb_last_evt.get("event_type", lb_last_evt.get("event", ""))).strip().lower()
+                lb_outcome = lb_last_evt.get("outcome")
+                lb_lost = (
+                    lb_et_str in TURNOVER_EVENTS
+                    or (pd.notna(lb_outcome) and int(lb_outcome) == 0)
+                )
+                if not lb_lost:
+                    log.debug(
+                        "High regain Case B suppressed: shooting team held "
+                        "ball at poss_id=%d without genuine loss",
+                        lookback_id,
+                    )
+                    return False
+            # Shooting team genuinely lost the ball in this earlier possession
+            break
+        lookback_id -= 1
+
+    return True
 
 
 def _check_cut_back(

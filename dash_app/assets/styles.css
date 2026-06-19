@@ -1700,6 +1700,35 @@ body {
     margin-top: 2px;
 }
 
+.kpi-interval-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary, #8899aa);
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+.kpi-interval-btn:hover {
+    color: var(--text-primary, #e8eaf0);
+    border-color: rgba(255,255,255,0.3);
+}
+.light-theme .kpi-interval-btn {
+    border-color: rgba(0,0,0,0.15);
+    color: #667085;
+}
+.light-theme .kpi-interval-btn:hover {
+    color: #344054;
+    border-color: rgba(0,0,0,0.3);
+}
+
 @media (max-width: 768px) {
     .formations-row {
         flex-direction: column;
@@ -2911,4 +2940,71 @@ body {
     line-height: 1;
     align-self: center;
     margin-bottom: 6px;
+}
+
+/* ═══ UNIFIED MODAL — shared shell for card drill-downs ═════════════════════ */
+/* Companion to src/styling/ui_components.py :: build_unified_modal().
+   Colours replicate the existing FT/CC modal look (rgba(15,25,35,0.97) bg,
+   #f0f0f0 text — modals stay dark in light mode, like the inline-styled ones
+   they standardize). Radii/borders reuse the :root tokens. */
+
+/* Unified Modal Animations: fade + scale-in (~180ms ease-out) on open.
+   Bootstrap's .fade class handles the opacity fade in AND out; we swap its
+   default translateY slide for a subtle scale on the dialog. */
+.unified-modal.modal.fade .modal-dialog {
+    transform: scale(0.96);
+    transition: transform 0.18s ease-out;
+}
+
+.unified-modal.modal.show .modal-dialog {
+    transform: scale(1);
+}
+
+.unified-modal .modal-content {
+    background-color: rgba(15, 25, 35, 0.97);
+    color: #f0f0f0;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+}
+
+.unified-modal .unified-modal-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1rem 1.25rem;
+}
+
+.unified-modal .unified-modal-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #f0f0f0;
+}
+
+/* Single standard close (×): Bootstrap's .btn-close inverted to white
+   so it reads on the dark header. */
+.unified-modal .unified-modal-header .btn-close {
+    filter: invert(1) grayscale(100%) brightness(180%);
+    opacity: 0.55;
+    transition: opacity 0.15s ease;
+}
+
+.unified-modal .unified-modal-header .btn-close:hover {
+    opacity: 1;
+}
+
+.unified-modal .unified-modal-body {
+    padding: 1.25rem;
+}
+
+/* ── Unified dropdown — compact filter selectors ("Top Method" style) ──────── */
+/* Width/sizing only; dark-theme colours come from the global .dash-dropdown*
+   rules above. Width matches .season-dropdown, the cleanest existing variant. */
+.unified-dropdown {
+    width: 160px;
+    font-size: 0.85rem;
+}
+
+/* Filters-bar dropdowns (src/components/filters.py): same type scale as
+   .unified-dropdown but fluid width — they fill responsive grid columns.
+   Dark-theme colours already come from the global .dash-dropdown* rules. */
+.dash-dropdown-dark {
+    font-size: 0.85rem;
 }

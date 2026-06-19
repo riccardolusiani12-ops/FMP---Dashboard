@@ -382,20 +382,9 @@ def _build_castle_heatmap(zone_counts: dict[int, int]) -> go.Figure:
                 font=dict(size=14, color=f"rgba(255,255,255,{intensity_text:.2f})"),
             )
 
-    # Dummy trace for colour legend
-    for label, color in [
-        ("High density", "rgba(180,20,40,0.85)"),
-        ("Low density",  "rgba(60,20,30,0.40)"),
-    ]:
-        fig.add_trace(go.Scatter(
-            x=[None], y=[None], mode="markers",
-            marker=dict(size=10, color=color, symbol="square"),
-            name=label, showlegend=True,
-        ))
-
     apply_chart_theme(fig, "dark")
     draw_pitch(fig, theme="dark", title="Zone Action Density — Defensive Third",
-               height=430, show_legend=True, draw_zones=True,
+               height=430, show_legend=False, draw_zones=True,
                highlight_defensive_third=True, emphasize_own_box=True)
     return fig
 
