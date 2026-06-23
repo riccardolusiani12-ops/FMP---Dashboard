@@ -33,7 +33,12 @@ from src.styling.plotly_template import apply_chart_theme
 from src.styling.ui_components import ds_header
 
 from src.analytics.chance_creation import ORIGIN_LABELS
-from src.components.chance_creation_cards import TIER_META
+from src.components.chance_creation_cards import (
+    TIER_META,
+    extract_penalty_stats,
+    set_piece_count_excl_penalties,
+    penalty_origin_card,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
@@ -212,9 +217,15 @@ def _section_origin_breakdown(shots_detail: list) -> html.Div:
         showlegend=False,
     )
 
+    # Penalty stats and adjusted Set Piece count (penalty shots excluded from Set Piece)
+    _pen_stats_detail = extract_penalty_stats(shots_detail)
+    _sp_excl          = set_piece_count_excl_penalties(shots_detail)
+
     cards = []
     for origin in ORIGIN_LABELS:
         count = counts[origin]
+        if origin == "Set Piece":
+            count = _sp_excl
         if count == 0:
             continue
         pct    = round(count / total * 100, 1)
@@ -248,13 +259,20 @@ def _section_origin_breakdown(shots_detail: list) -> html.Div:
             )
         )
 
+    # Penalty card appended last
+    cards.append(penalty_origin_card(
+        awarded=_pen_stats_detail["awarded"],
+        scored=_pen_stats_detail["scored"],
+        conversion_rate=_pen_stats_detail["conversion_rate"],
+    ))
+
     return html.Div(
         [
             html.H6("Attack Origin Breakdown",
                     className="buildup-subsection-title"),
             html.Div(
                 "How the opponent built each shot conceded — "
-                "Set Piece → High Regain → Cross → Through Ball → Cut Back → Combination",
+                "Set Piece → High Regain → Cross → Through Ball → Cut Back → Combination · Penalty",
                 style={"fontSize": "0.78rem", "color": "var(--text-muted)",
                        "marginBottom": "0.6rem"},
             ),

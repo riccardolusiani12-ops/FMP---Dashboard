@@ -1689,18 +1689,34 @@ def build_cc_section(season: str, team_name: str) -> html.Div:
 
     # ── Attack Origin Breakdown — per-origin cards with goals + conversion ──
     from src.analytics.chance_creation import ORIGIN_LABELS as _ORIGIN_LABELS
+    from src.components.chance_creation_cards import (
+        extract_penalty_stats,
+        set_piece_count_excl_penalties,
+        penalty_origin_card,
+        ORIGIN_COLORS as _CC_ORIGIN_COLORS,
+        ORIGIN_ICONS  as _CC_ORIGIN_ICONS,
+    )
+
+    # Penalty stats derived from shot-level list (carries is_penalty after re-run)
+    _shots_list   = data.get("shots", [])
+    _pen_stats    = extract_penalty_stats(_shots_list)
+    _sp_excl_cnt  = set_piece_count_excl_penalties(_shots_list)
+
     _origin_data = m.get("origin_data", {})
     _origin_cards = []
     for _o in _ORIGIN_LABELS:
         _info = _origin_data.get(_o, {})
         _cnt  = _info.get("total", 0)
+        # For Set Piece, replace the raw total with penalty-excluded count
+        if _o == "Set Piece":
+            _cnt = _sp_excl_cnt
         if _cnt == 0:
             continue
         _pm        = _info.get("per_match", 0.0)
         _goals     = _info.get("goals_total", 0)
         _conv      = _info.get("conversion_pct")
-        _oc        = ORIGIN_COLORS.get(_o, "#6b7280")
-        _oi        = ORIGIN_ICONS.get(_o, "bi-activity")
+        _oc        = _CC_ORIGIN_COLORS.get(_o, "#6b7280")
+        _oi        = _CC_ORIGIN_ICONS.get(_o, "bi-activity")
 
         _conv_line = (
             html.Span(
@@ -1734,12 +1750,19 @@ def build_cc_section(season: str, team_name: str) -> html.Div:
             )
         )
 
+    # Penalty card appended last — no component ID (matches pattern of other cards here)
+    _origin_cards.append(penalty_origin_card(
+        awarded=_pen_stats["awarded"],
+        scored=_pen_stats["scored"],
+        conversion_rate=_pen_stats["conversion_rate"],
+    ))
+
     attack_origin_breakdown_div = html.Div(
         [
             html.H6("ATTACK ORIGIN BREAKDOWN", className="buildup-subsection-title"),
             html.Div(
                 "How each chance was created — priority: "
-                "Through Ball → Set Piece → Individual Play → High Regain → Cut Back → Cross → Combination",
+                "Through Ball → Set Piece → Individual Play → High Regain → Cut Back → Cross → Combination · Penalty",
                 style={"fontSize": "0.78rem", "color": "var(--text-muted)",
                        "marginBottom": "0.6rem"},
             ),

@@ -308,20 +308,45 @@ def _check_individual_play(shot_row: pd.Series) -> bool:
     return _has_qualifier(shot_row, "Individual Play", "individual_play", "Individual play")
 
 
-def _is_set_piece_event(row: pd.Series) -> bool:
+def _is_set_piece_event(row: pd.Series, attacking_team: Optional[str] = None) -> bool:
     """Return ``True`` if *row* is a dead-ball restart event.
 
     Checks both the event-type string and any set-piece qualifier column.
-    """
 
+    Parameters
+    ----------
+    attacking_team : str, optional
+        Canonical name of the team whose shot is being classified.  When
+        provided, the function only returns ``True`` if the restart event
+        belongs to that same team — i.e. it was *their* corner/FK/throw-in.
+        This prevents a false "Set Piece" attribution when the opponent takes
+        a restart and the attacking team immediately wins the ball and scores
+        within the 15 s lookback window (forensic finding: GW13 min 68,
+        GW17 min 64, GW19 min 97 for Inter 2025/26 were misclassified because
+        the opponent's restart fell inside the window).  If ``attacking_team``
+        is ``None`` or the event row has no team identifier, falls back to the
+        original team-agnostic behaviour.
+    """
     et = str(row.get("event_type", row.get("event", ""))).strip().lower()
-    if et in SET_PIECE_EVENTS:
-        return True
-    for col in SET_PIECE_QUALIFIER_COLS:
-        val = str(row.get(col, "")).strip().lower()
-        if val in ("si", "yes", "1", "true"):
-            return True
-    return False
+    is_sp = et in SET_PIECE_EVENTS
+    if not is_sp:
+        for col in SET_PIECE_QUALIFIER_COLS:
+            val = str(row.get(col, "")).strip().lower()
+            if val in ("si", "yes", "1", "true"):
+                is_sp = True
+                break
+
+    if not is_sp:
+        return False
+
+    if attacking_team is not None:
+        row_team_raw = row.get("team_name", row.get("team", None))
+        if row_team_raw is not None and str(row_team_raw).strip():
+            row_team = canonical_name(str(row_team_raw).strip())
+            if row_team.lower() != attacking_team.lower():
+                return False
+
+    return True
 
 
 def _check_set_piece(
@@ -396,12 +421,13 @@ def _check_set_piece(
             return passes_in_poss <= SET_PIECE_MAX_PASSES
 
     # Inline set-piece event within the current possession
+    attacking_team = str(shot_row.get("team_name", "")).strip() or None
     for i in range(len(poss_events)):
         row = poss_events.iloc[i]
         row_sec = _match_sec(row)
         if row_sec < lookback_start or row_sec >= shot_sec:
             continue
-        if _is_set_piece_event(row):
+        if _is_set_piece_event(row, attacking_team=attacking_team):
             return passes_in_poss <= SET_PIECE_MAX_PASSES
 
     # ── B. Previous possessions (up to 6 hops) ────────────────────────────
@@ -428,8 +454,21 @@ def _check_set_piece(
         sp_found = False
         sp_time: Optional[float] = None
 
-        # Check poss_origin of the previous possession
-        if "poss_origin" in prev_poss.columns:
+        # Check poss_origin of the previous possession — only credit it if
+        # the possession belonged to the attacking team (same team as the shot).
+        # An opponent's corner/FK in a previous possession must not be counted.
+        prev_team_raw = (
+            prev_poss["team_name"].dropna().iloc[-1]
+            if "team_name" in prev_poss.columns and not prev_poss["team_name"].dropna().empty
+            else None
+        )
+        prev_team = canonical_name(str(prev_team_raw).strip()) if prev_team_raw is not None else ""
+        prev_is_attacker = (
+            attacking_team is not None
+            and prev_team.lower() == canonical_name(attacking_team).lower()
+        ) if attacking_team else True
+
+        if "poss_origin" in prev_poss.columns and prev_is_attacker:
             prev_origin = str(prev_poss["poss_origin"].iloc[0])
             if prev_origin in SET_PIECE_ORIGINS:
                 prev_start = _match_sec(prev_poss.iloc[0])
@@ -446,7 +485,7 @@ def _check_set_piece(
                     continue
                 if row_sec >= poss_start_sec:
                     break
-                if _is_set_piece_event(row):
+                if _is_set_piece_event(row, attacking_team=attacking_team):
                     sp_found = True
                     sp_time = row_sec
                     break
@@ -1129,6 +1168,14 @@ class ChanceCreationAnalyzer:
             # Big Chance — Opta qualifier on the shot row
             is_big_chance = _has_qualifier(shot_row, "Big Chance", "big_chance")
 
+            # Penalty — Opta attaches Penalty="Si" directly on the shot row.
+            # Only type_ids 13/14/15/16 (standard shot events) are considered;
+            # type_id=84 (VAR/setup artefacts) is intentionally excluded.
+            is_penalty = bool(
+                type_id in {13, 14, 15, 16}
+                and _has_qualifier(shot_row, "Penalty", "penalty")
+            )
+
             # Quality tier
             quality_tier = classify_shot_quality(
                 type_id, xg_val, on_target, is_goal_event, is_big_chance,
@@ -1148,6 +1195,7 @@ class ChanceCreationAnalyzer:
                 "xGOT": round(xgot_val, 4),
                 "PV": round(pv_val, 4),
                 "quality_tier": quality_tier,
+                "is_penalty": is_penalty,
                 "minute": int(shot_row.get("minute", 0) or 0),
                 "second": int(shot_row.get("second", 0) or 0),
                 "period": int(shot_row.get("period", 1) or 1),

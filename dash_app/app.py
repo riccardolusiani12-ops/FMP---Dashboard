@@ -27,6 +27,7 @@ from src.callbacks.navigation import register_navigation_callbacks
 from src.callbacks.serie_a_callbacks import register_serie_a_callbacks
 from src.callbacks.team_detail_callbacks import register_team_detail_callbacks
 from src.callbacks.analysis_callbacks import register_analysis_callbacks
+from src.callbacks.player_analysis_callbacks import register_player_analysis_callbacks
 from src.callbacks.theme_callbacks import register_theme_callbacks
 
 # ── Bootstrap Icons CDN ──────────────────────────────────────────────────────
@@ -186,6 +187,7 @@ register_navigation_callbacks(app)
 register_serie_a_callbacks(app)
 register_team_detail_callbacks(app)
 register_analysis_callbacks(app)
+register_player_analysis_callbacks(app)
 register_theme_callbacks(app)
 
 # ── Run ──────────────────────────────────────────────────────────────────────

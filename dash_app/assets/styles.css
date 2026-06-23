@@ -594,6 +594,16 @@ body.light-theme {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
 }
 
+/* Transitions Overview "lights" density map. Unlike .pitch-dark-container, this  */
+/* map is theme-aware (server-rebuilt on theme toggle), so the container stays    */
+/* transparent and adopts the surrounding card surface in BOTH themes — the       */
+/* clientside theme patcher is intentionally allowed to reach it.                 */
+.pitch-transitions-lights {
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    padding: 4px;
+}
+
 /* Chain-to-goal matrix: dark card with proper table contrast */
 .chain-goal-matrix-table {
     border: 1px solid var(--border-light);

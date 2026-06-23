@@ -351,6 +351,13 @@ def _module_selector(match_label: str, prefix: str) -> html.Div:
                         "set_pieces",
                         prefix,
                     ),
+                    _module_card_active(
+                        "bi-people-fill",
+                        "Player Analysis",
+                        "Possession value and per-player KPIs for both teams.",
+                        "player",
+                        prefix,
+                    ),
                 ],
                 className="modules-grid",
             ),
@@ -387,6 +394,18 @@ def _analysis_view(match_csv: Path, team: str, match_label: str,
         icon_cls     = "bi bi-arrow-left-right"
         content      = dcc.Loading(
             _transitions_phase(match_csv, perspective),
+            type="circle", color="#8a1f33",
+        )
+    elif module == "player":
+        # Player Analysis is scoped to the selected team (`perspective`), like the
+        # other Match Analysis phases. PV scoring still runs over BOTH teams' events
+        # internally (so the team's defensive actions during the opponent's
+        # possessions are captured); scoping happens at the player-display step.
+        from src.components.player_analysis_cards import player_analysis_card
+        module_title = "Player Analysis"
+        icon_cls     = "bi bi-people-fill"
+        content      = dcc.Loading(
+            _safe_render(player_analysis_card, match_csv, perspective),
             type="circle", color="#8a1f33",
         )
     else:

@@ -174,7 +174,7 @@ def _register_prefix(app, prefix: str):
         info  = parse_match_filename(match_csv)
         label = info["label"]
 
-        if active_module in ("offensive", "defensive", "set_pieces", "transitions"):
+        if active_module in ("offensive", "defensive", "set_pieces", "transitions", "player"):
             content = _analysis_view(match_csv, team, label, active_module, _p)
         else:
             content = _module_selector(label, _p)
@@ -348,6 +348,64 @@ def _register_season_opponent_callbacks(app):
                 _placeholder("opp-section-dp"),
                 _placeholder("opp-section-dc"),
                 _placeholder("opp-section-ccc"),
+            ])
+            trigger = {"season": season, "team": team}
+            return hide, show, skeleton, trigger
+
+        elif active_view == "player":
+            def _placeholder(section_id: str) -> html.Div:
+                return html.Div(
+                    dcc.Loading(
+                        html.Div(id=section_id),
+                        type="circle",
+                        color="#8a1f33",
+                    ),
+                    style={"minHeight": "120px"},
+                    id=f"{section_id}-wrap",
+                )
+
+            skeleton = html.Div([
+                _nav_bar(),
+                _placeholder("opp-section-player"),
+            ])
+            trigger = {"season": season, "team": team}
+            return hide, show, skeleton, trigger
+
+        elif active_view == "transitions":
+            def _placeholder(section_id: str) -> html.Div:
+                return html.Div(
+                    dcc.Loading(
+                        html.Div(id=section_id),
+                        type="circle",
+                        color="#8a1f33",
+                    ),
+                    style={"minHeight": "120px"},
+                    id=f"{section_id}-wrap",
+                )
+
+            skeleton = html.Div([
+                _nav_bar(),
+                _placeholder("opp-section-trans-off"),
+                _placeholder("opp-section-trans-def"),
+            ])
+            trigger = {"season": season, "team": team}
+            return hide, show, skeleton, trigger
+
+        elif active_view == "set_pieces":
+            def _placeholder(section_id: str) -> html.Div:
+                return html.Div(
+                    dcc.Loading(
+                        html.Div(id=section_id),
+                        type="circle",
+                        color="#8a1f33",
+                    ),
+                    style={"minHeight": "120px"},
+                    id=f"{section_id}-wrap",
+                )
+
+            skeleton = html.Div([
+                _nav_bar(),
+                _placeholder("opp-section-sp"),
             ])
             trigger = {"season": season, "team": team}
             return hide, show, skeleton, trigger
@@ -1074,6 +1132,31 @@ def _register_season_opponent_callbacks(app):
         from src.components.opp_season_chances_conceded_cards import build_cc_conceded_section
         return build_cc_conceded_section(trigger["season"], trigger["team"])
 
+    # ── Chances Conceded: Clean Sheet modal ─────────────────────────────────
+    @app.callback(
+        Output("opp-season-cc-conceded-modal-clean-sheets",      "is_open"),
+        Output("opp-season-cc-conceded-modal-clean-sheets-body", "children"),
+        Input("opp-season-cc-conceded-kpi-clean-sheets",          "n_clicks"),
+        State("opp-season-cc-conceded-store",                     "data"),
+        State("opp-season-cc-conceded-modal-clean-sheets",        "is_open"),
+        prevent_initial_call=True,
+    )
+    def _cc_conceded_clean_sheets_modal(n, store, is_open):
+        if not n:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        from src.components.opp_season_chances_conceded_cards import (
+            compute_league_clean_sheets, _league_table_clean_sheets,
+        )
+        d = store or {}
+        season    = d.get("season", "")
+        team_name = d.get("team", "")
+        season_key = season.replace("/", "_")
+        league_df = compute_league_clean_sheets(season_key)
+        body = _league_table_clean_sheets(league_df, team_name)
+        return True, body
+
     # ── Chances Conceded: Overview KPI league-comparison modals ─────────────
     # Tuple: (slug, kpi_id, metric_col, fmt, total_col, show_xg_total)
     _CC_CONCEDED_KPI_MODALS = [
@@ -1246,3 +1329,280 @@ def _register_season_opponent_callbacks(app):
                    "borderRadius": "6px", "border": "1px solid rgba(255,255,255,0.07)"},
         )
         return True, title, body
+
+    # ── Season Player Analysis: lazy section loader ─────────────────────────
+    @app.callback(
+        Output("opp-section-player", "children"),
+        Input("opp-season-load-trigger", "data"),
+        prevent_initial_call=True,
+    )
+    def _opp_load_player(trigger):
+        if not trigger:
+            return no_update
+        from src.components.opp_season_player_cards import build_player_section
+        return build_player_section(trigger["season"], trigger["team"])
+
+    # ── Season Player Analysis: KPI-card breakdown modal ────────────────────
+    # Opens on any In/Out KPI card click; fills the shared modal with the
+    # metric's definition + ranked within-role table (read from parquet).
+    @app.callback(
+        Output("opp-season-player-modal",       "is_open"),
+        Output("opp-season-player-modal-title", "children"),
+        Output("opp-season-player-modal-body",  "children"),
+        Input({"type": "opp-season-player-kpi-card", "section": ALL, "index": ALL}, "n_clicks"),
+        State("opp-season-player-store",         "data"),
+        State("opp-season-player-modal",         "is_open"),
+        prevent_initial_call=True,
+    )
+    def _opp_player_kpi_modal(n_clicks_list, store, is_open):
+        if not any(c for c in (n_clicks_list or [])):
+            return no_update, no_update, no_update
+        from dash import ctx as _ctx
+        trig = _ctx.triggered_id
+        if not isinstance(trig, dict):
+            return no_update, no_update, no_update
+
+        from src.components.opp_season_player_cards import build_kpi_breakdown_modal_body
+        metric = trig.get("index")
+        d = store or {}
+        season    = d.get("season", "")       # stored as "2025/2026" label
+        team_name = d.get("team", "")
+        season_key = season.replace("/", "_")
+
+        title = metric.replace("_", " ").title()
+        body = build_kpi_breakdown_modal_body(season_key, team_name, metric)
+        return True, title, body
+
+    # ════════════════════════════════════════════════════════════════════════
+    # TRANSITIONS OVERVIEW (offensive + defensive) — season aggregate
+    # ════════════════════════════════════════════════════════════════════════
+
+    # ── Lazy section loaders (one per side) — theme-aware lights map ─────────
+    @app.callback(
+        Output("opp-section-trans-off", "children"),
+        Input("opp-season-load-trigger", "data"),
+        State("theme-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _opp_load_trans_off(trigger, theme):
+        if not trigger:
+            return no_update
+        from src.components.opp_season_transitions_cards import build_transitions_section
+        return build_transitions_section(
+            trigger["season"], trigger["team"], side="offensive",
+            theme=(theme or "dark"),
+        )
+
+    @app.callback(
+        Output("opp-section-trans-def", "children"),
+        Input("opp-season-load-trigger", "data"),
+        State("theme-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _opp_load_trans_def(trigger, theme):
+        if not trigger:
+            return no_update
+        from src.components.opp_season_transitions_cards import build_transitions_section
+        return build_transitions_section(
+            trigger["season"], trigger["team"], side="defensive",
+            theme=(theme or "dark"),
+        )
+
+    # ── Theme rebuild: repaint both lights maps when the theme toggles ──────
+    # The lights map lives OUTSIDE .pitch-dark-container so the clientside
+    # theme patcher reaches its fonts/axes — but the coloured zone fills are
+    # server-drawn, so the figure is rebuilt here on theme change. no_update
+    # when the section isn't mounted (graph absent) is handled by Dash.
+    for _t_side, _t_graph in (("offensive", "opp-season-trans-off-lights"),
+                              ("defensive", "opp-season-trans-def-lights")):
+        _ts = _t_side
+        _tg = _t_graph
+        _ts_store = ("opp-season-trans-off-store" if _t_side == "offensive"
+                     else "opp-season-trans-def-store")
+
+        @app.callback(
+            Output(_tg, "figure"),
+            Input("theme-store", "data"),
+            State(_ts_store, "data"),
+            prevent_initial_call=True,
+        )
+        def _trans_theme_rebuild(theme, store, _side=_ts):
+            if not store:
+                return no_update
+            from src.components.opp_season_transitions_cards import _build_transitions_lights
+            raw = (store or {}).get("zone_lights", {}) or {}
+            zone_counts = {}
+            for k, v in raw.items():
+                try:
+                    zone_counts[int(k)] = int(v)
+                except (TypeError, ValueError):
+                    pass
+            return _build_transitions_lights(zone_counts, _side, theme or "dark")
+
+    # ── KPI league-comparison modals (per side) ─────────────────────────────
+    # (slug, metric_col_suffix, label, ascending, fmt, suffix)
+    _TRANS_KPI_MODALS = {
+        "offensive": [
+            ("total",     "total_per_match",     "Transitions/M", False, ".1f", ""),
+            ("qualified", "qualified_per_match",  "Qualifying/M",  False, ".1f", ""),
+            ("rate",      "transition_rate",      "Qual. Rate",    False, ".1f", "%"),
+        ],
+        "defensive": [
+            ("total",     "total_per_match",      "Transitions/M",  True, ".1f", ""),
+            ("qualified", "qualified_per_match",   "Qualifying/M",   True, ".1f", ""),
+            ("rate",      "transition_rate",       "Qual. Rate",     True, ".1f", "%"),
+            ("press",     "immediate_press_rate",  "Imm. Press",    False, ".1f", "%"),
+            ("drop",      "drop_back_rate",        "Drop Back",      True, ".1f", "%"),
+        ],
+    }
+
+    for _side_key, _kpi_list in _TRANS_KPI_MODALS.items():
+        _cid = "opp-season-trans-off" if _side_key == "offensive" else "opp-season-trans-def"
+        _prefix = "off_" if _side_key == "offensive" else "def_"
+        for _slug, _suffix_col, _label, _asc, _fmt, _val_suffix in _kpi_list:
+            _s   = _slug
+            _col = f"{_prefix}{_suffix_col}"
+            _lbl = _label
+            _a   = _asc
+            _f   = _fmt
+            _vs  = _val_suffix
+            _id  = _cid
+
+            @app.callback(
+                Output(f"{_id}-modal-{_s}",      "is_open"),
+                Output(f"{_id}-modal-{_s}-body", "children"),
+                Input(f"{_id}-kpi-{_s}",          "n_clicks"),
+                State(f"{_id}-store",             "data"),
+                State(f"{_id}-modal-{_s}",        "is_open"),
+                prevent_initial_call=True,
+            )
+            def _trans_kpi_modal(n, store, is_open, _col=_col, _lbl=_lbl,
+                                 _a=_a, _f=_f, _vs=_vs):
+                if not n:
+                    return no_update, no_update
+                if is_open:
+                    return False, no_update
+                from src.components.opp_season_transitions_cards import (
+                    load_league_transitions_summary, _league_table,
+                )
+                d = store or {}
+                season    = d.get("season", "")
+                team_name = d.get("team", "")
+                season_key = season.replace("/", "_")
+                summary = load_league_transitions_summary(season_key)
+                body = _league_table(
+                    summary, _col, _lbl, team_name,
+                    ascending=_a, fmt=_f, suffix=_vs,
+                )
+                return True, body
+
+    # ── Zone / Corridor single-team breakdown modals (per side) ─────────────
+    for _side_key in ("offensive", "defensive"):
+        _cid = "opp-season-trans-off" if _side_key == "offensive" else "opp-season-trans-def"
+        for _kind in ("by-zone", "by-corridor"):
+            _id   = _cid
+            _k    = _kind
+            _sk   = _side_key
+
+            @app.callback(
+                Output(f"{_id}-modal-{_k}",      "is_open"),
+                Output(f"{_id}-modal-{_k}-body", "children"),
+                Input(f"{_id}-kpi-{_k}",          "n_clicks"),
+                State(f"{_id}-store",             "data"),
+                State(f"{_id}-modal-{_k}",        "is_open"),
+                prevent_initial_call=True,
+            )
+            def _trans_breakdown_modal(n, store, is_open, _k=_k, _sk=_sk):
+                if not n:
+                    return no_update, no_update
+                if is_open:
+                    return False, no_update
+                from src.components.opp_season_transitions_cards import (
+                    _zone_breakdown_body, _corridor_breakdown_body,
+                )
+                d = store or {}
+                body = (_zone_breakdown_body(d, _sk) if _k == "by-zone"
+                        else _corridor_breakdown_body(d, _sk))
+                return True, body
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SET PIECES OVERVIEW — Corner Kicks (season aggregate)
+    # ══════════════════════════════════════════════════════════════════════
+
+    # Lazy section loader — fires when the Set Pieces tile sets the trigger.
+    @app.callback(
+        Output("opp-section-sp", "children"),
+        Input("opp-season-load-trigger", "data"),
+        State("theme-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _opp_load_set_pieces(trigger, theme):
+        if not trigger:
+            return no_update
+        from src.components.opp_season_corner_kicks_cards import build_corner_kicks_section
+        return build_corner_kicks_section(
+            trigger["season"], trigger["team"], theme=(theme or "dark"),
+        )
+
+    # Theme rebuild: repaint both delivery-map lights + the delivery bar when
+    # the theme toggles. Zone fills / bar text are server-drawn, so rebuild.
+    @app.callback(
+        Output("opp-season-sp-map-left",     "figure"),
+        Output("opp-season-sp-map-right",    "figure"),
+        Output("opp-season-sp-delivery-bar", "figure"),
+        Input("theme-store", "data"),
+        State("opp-season-sp-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _sp_theme_rebuild(theme, store):
+        if not store:
+            return no_update, no_update, no_update
+        from src.components.opp_season_corner_kicks_cards import (
+            _build_corner_lights, _delivery_bar,
+        )
+        th = theme or "dark"
+        corners = (store or {}).get("corners", []) or []
+        delivery_counts = (store or {}).get("delivery_counts", {}) or {}
+        nl = sum(1 for c in corners if bool(c.get("is_left", True)))
+        nr = sum(1 for c in corners if not bool(c.get("is_left", True)))
+        fig_left  = _build_corner_lights(corners, True,  f"Left-Side Corners ({nl})", th)
+        fig_right = _build_corner_lights(corners, False, f"Right-Side Corners ({nr})", th)
+        return fig_left, fig_right, _delivery_bar(delivery_counts, th)
+
+    # KPI league-comparison modals
+    from src.components.opp_season_corner_kicks_cards import KPI_MODALS as _SP_KPI_MODALS
+    for _sp_slug, _sp_col, _sp_lbl, _sp_asc, _sp_fmt, _sp_suf, _sp_title in _SP_KPI_MODALS:
+        _ss   = _sp_slug
+        _scol = _sp_col
+        _slbl = _sp_lbl
+        _sa   = _sp_asc
+        _sf   = _sp_fmt
+        _svs  = _sp_suf
+
+        @app.callback(
+            Output(f"opp-season-sp-modal-{_ss}",      "is_open"),
+            Output(f"opp-season-sp-modal-{_ss}-body", "children"),
+            Input(f"opp-season-sp-kpi-{_ss}",          "n_clicks"),
+            State("opp-season-sp-store",               "data"),
+            State(f"opp-season-sp-modal-{_ss}",        "is_open"),
+            prevent_initial_call=True,
+        )
+        def _sp_kpi_modal(n, store, is_open, _scol=_scol, _slbl=_slbl,
+                          _sa=_sa, _sf=_sf, _svs=_svs):
+            if not n:
+                return no_update, no_update
+            if is_open:
+                return False, no_update
+            from src.components.opp_season_corner_kicks_cards import (
+                load_league_corner_kicks_summary, _league_table,
+            )
+            d = store or {}
+            season    = d.get("season", "")
+            team_name = d.get("team", "")
+            season_key = season.replace("/", "_")
+            summary = load_league_corner_kicks_summary(season_key)
+            body = _league_table(
+                summary, _scol, _slbl, team_name,
+                ascending=_sa, fmt=_sf, suffix=_svs,
+            )
+            return True, body

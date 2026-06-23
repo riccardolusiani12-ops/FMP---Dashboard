@@ -46,6 +46,8 @@ Season-aggregate Chances Conceded section for Opponent Analysis.
 #   opp-season-cc-conceded-modal-xg-pm          / -title / -body
 #   opp-season-cc-conceded-modal-origin-{slug}  / -title / -body
 #   opp-season-cc-conceded-pitch-zone-grid  (18-zone pitch map)
+#   opp-season-cc-conceded-kpi-clean-sheets (Clean Sheet card — first in section)
+#   opp-season-cc-conceded-modal-clean-sheets / -title / -body
 """
 
 from __future__ import annotations
@@ -57,7 +59,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from dash import dcc, html
 
-from src.config import READY_DATA_DIR
+from src.config import READY_DATA_DIR, PROCESSED_DATA_DIR
 from src.team_mapping import canonical_name
 from src.styling.theme import COLORS_DARK, SEMANTIC_COLORS
 from src.styling.plotly_template import apply_chart_theme
@@ -66,7 +68,7 @@ from src.utils.caching import cache_get, cache_set
 from src.utils.logging import log
 
 from src.analytics.chance_creation import ORIGIN_LABELS
-from src.components.chance_creation_cards import TIER_META
+from src.components.chance_creation_cards import TIER_META, penalty_origin_card
 
 # ── Palette ──────────────────────────────────────────────────────────────────
 _HIGHLIGHT = COLORS_DARK["accent"]          # "#8a1f33"
@@ -190,6 +192,15 @@ def compute_season_cc_conceded(season: str, team_name: str) -> dict:
             "pct":       _f(f"tier_{tk}_pct"),
         }
 
+    # Penalty stats conceded (new columns added by precompute — graceful fallback for older parquets)
+    _pen_raw_conv = row.get("penalty_conversion_conceded")
+    penalty_stats_conceded = {
+        "awarded":         _i("penalty_awarded_conceded"),
+        "scored":          _i("penalty_scored_conceded"),
+        "conversion_rate": None if (_pen_raw_conv is None or _pen_raw_conv != _pen_raw_conv)
+                           else float(_pen_raw_conv),
+    }
+
     return {
         "season":                  str(row.get("season", season)),
         "team":                    team_name,
@@ -208,6 +219,7 @@ def compute_season_cc_conceded(season: str, team_name: str) -> dict:
         "tier_data":               tier_data,
         "shots":                   shots,           # list of {x, y, outcome}
         "zone_shot_counts":        zone_shot_counts,  # {zone_id: count}
+        "penalty_stats_conceded":  penalty_stats_conceded,
     }
 
 
@@ -224,12 +236,95 @@ def _empty_result() -> dict:
                       for tk in ("level_3_converted", "level_2_threat", "level_0_low")},
         "shots": [],
         "zone_shot_counts": {},
+        "penalty_stats_conceded": {"awarded": 0, "scored": 0, "conversion_rate": None},
     }
 
 
 def load_league_cc_conceded_summary(season: str) -> pd.DataFrame | None:
     """Return the full chances_conceded_summary_{season}.parquet (all teams)."""
     return _load_cc_parquet(season)
+
+
+def _load_matches_parquet(season: str) -> pd.DataFrame | None:
+    """Load match-level results (HG/AG) for a season. Tries ready dir first."""
+    cache_key = f"matches_{season}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    for path in (
+        READY_DATA_DIR / f"matches_{season}.parquet",
+        PROCESSED_DATA_DIR / f"matches_{season}.parquet",
+    ):
+        if path.exists():
+            try:
+                df = pd.read_parquet(path)
+                cache_set(cache_key, df)
+                return df
+            except Exception as exc:
+                log.error("Failed to read %s: %s", path.name, exc)
+    log.warning("No matches parquet for season %s", season)
+    return None
+
+
+def compute_clean_sheet_stats(season: str, team_name: str) -> dict:
+    """
+    Return clean sheet stats for one team in one season.
+
+    A clean sheet is any match in which zero goals appear on the scoreline
+    against the team (HG==0 when away, AG==0 when home). Own goals are
+    included in HG/AG by football convention.
+
+    Returns: {clean_sheets: int, matches_played: int, pct: float (0–100, 1dp)}
+    """
+    df = _load_matches_parquet(season)
+    if df is None or df.empty:
+        return {"clean_sheets": 0, "matches_played": 0, "pct": 0.0}
+
+    target = canonical_name(team_name)
+    home_mask = df["Home"].apply(lambda t: canonical_name(str(t)) == target)
+    away_mask = df["Away"].apply(lambda t: canonical_name(str(t)) == target)
+
+    home_cs = int(((df["AG"] == 0) & home_mask).sum())
+    away_cs = int(((df["HG"] == 0) & away_mask).sum())
+    clean_sheets  = home_cs + away_cs
+    matches_played = int((home_mask | away_mask).sum())
+    pct = round(clean_sheets / matches_played * 100, 1) if matches_played else 0.0
+
+    return {"clean_sheets": clean_sheets, "matches_played": matches_played, "pct": pct}
+
+
+def compute_league_clean_sheets(season: str) -> pd.DataFrame:
+    """
+    Return a ranked DataFrame of clean sheet counts for all teams in the season.
+
+    Columns: rank (int) | team (str) | clean_sheets (int) | pct (float)
+    Sorted by clean_sheets descending; ties broken alphabetically by team.
+    """
+    df = _load_matches_parquet(season)
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["rank", "team", "clean_sheets", "pct"])
+
+    # Collect all teams
+    teams = sorted(set(df["Home"].tolist()) | set(df["Away"].tolist()))
+
+    rows = []
+    for team in teams:
+        home_mask = df["Home"] == team
+        away_mask = df["Away"] == team
+        home_cs   = int(((df["AG"] == 0) & home_mask).sum())
+        away_cs   = int(((df["HG"] == 0) & away_mask).sum())
+        cs   = home_cs + away_cs
+        mp   = int((home_mask | away_mask).sum())
+        pct  = round(cs / mp * 100, 1) if mp else 0.0
+        rows.append({"team": team, "clean_sheets": cs, "pct": pct})
+
+    result = (
+        pd.DataFrame(rows)
+        .sort_values(["clean_sheets", "team"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
+    result.insert(0, "rank", range(1, len(result) + 1))
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -415,6 +510,124 @@ def _league_table(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CLEAN SHEET CARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _league_table_clean_sheets(league_df: pd.DataFrame, highlight_team: str) -> html.Div:
+    """Ranked table: # | Team | Clean Sheets | % — for the clean sheet modal."""
+    if league_df is None or league_df.empty:
+        return html.P("No league data available.", style={"color": "#8899aa"})
+
+    hl_lower = canonical_name(highlight_team).lower()
+
+    header = html.Div(
+        [
+            html.Span("#",             style={"width": "2rem", "color": "#8899aa",
+                                              "fontSize": "0.75rem", "flexShrink": "0"}),
+            html.Span("Team",          style={"flex": "1", "color": "#8899aa",
+                                              "fontSize": "0.75rem"}),
+            html.Span("Clean Sheets",  style={"color": "#8899aa", "fontSize": "0.75rem",
+                                              "minWidth": "5.5rem", "textAlign": "right"}),
+            html.Span("% Matches",     style={"color": "#8899aa", "fontSize": "0.75rem",
+                                              "minWidth": "4.5rem", "textAlign": "right"}),
+        ],
+        style={"display": "flex", "padding": "6px 10px",
+               "borderBottom": "1px solid rgba(255,255,255,0.15)", "marginBottom": "2px"},
+    )
+
+    rows = []
+    for _, row in league_df.iterrows():
+        team = str(row["team"])
+        cs   = int(row["clean_sheets"])
+        pct  = float(row["pct"])
+        rank = int(row["rank"])
+        is_hl = canonical_name(team).lower() == hl_lower
+
+        row_style: dict = {
+            "display": "flex", "padding": "6px 10px",
+            "borderBottom": "1px solid rgba(255,255,255,0.05)",
+            "alignItems": "center",
+        }
+        if is_hl:
+            row_style.update({
+                "background": f"{_HIGHLIGHT}22",
+                "borderLeft": f"3px solid {_HIGHLIGHT}",
+            })
+
+        rows.append(
+            html.Div(
+                [
+                    html.Span(str(rank), style={"width": "2rem", "color": "#8899aa",
+                                                "fontSize": "0.8rem", "flexShrink": "0"}),
+                    html.Span(team, style={
+                        "flex": "1",
+                        "fontWeight": "700" if is_hl else "400",
+                        "color": _HIGHLIGHT if is_hl else "var(--text-primary)",
+                        "fontSize": "0.88rem",
+                    }),
+                    html.Span(str(cs), style={
+                        "fontWeight": "700" if is_hl else "400",
+                        "color": _HIGHLIGHT if is_hl else "var(--text-secondary)",
+                        "fontSize": "0.9rem", "minWidth": "5.5rem", "textAlign": "right",
+                    }),
+                    html.Span(f"{pct:.1f}%", style={
+                        "fontWeight": "700" if is_hl else "400",
+                        "color": _HIGHLIGHT if is_hl else "var(--text-secondary)",
+                        "fontSize": "0.85rem", "minWidth": "4.5rem", "textAlign": "right",
+                    }),
+                ],
+                style=row_style,
+            )
+        )
+
+    return html.Div(
+        [header, *rows],
+        style={
+            "maxHeight": "460px", "overflowY": "auto",
+            "borderRadius": "6px",
+            "border": "1px solid rgba(255,255,255,0.07)",
+        },
+    )
+
+
+def build_clean_sheet_card(season: str, team_name: str) -> html.Div:
+    """
+    KPI card showing total clean sheets and percentage of matches.
+    Clicking opens a league-comparison modal via callback.
+    """
+    stats = compute_clean_sheet_stats(season, team_name)
+    cs  = stats["clean_sheets"]
+    mp  = stats["matches_played"]
+    pct = stats["pct"]
+
+    subtitle = f"{cs} / {mp} matches · {pct:.1f}%"
+
+    return html.Div(
+        [
+            html.Div(
+                html.I(className="bi bi-shield-fill-check",
+                       style={"color": "#22c55e", "fontSize": "1.3rem"}),
+                className="kpi-icon",
+            ),
+            html.Div(
+                [
+                    html.Span("Clean Sheets", className="kpi-label"),
+                    html.Span(str(cs), className="kpi-value"),
+                    html.Span(subtitle, className="kpi-subtitle",
+                              style={"color": "#22c55e"}),
+                ],
+                className="kpi-text",
+            ),
+            _expand_icon(),
+        ],
+        className="kpi-card",
+        id="opp-season-cc-conceded-kpi-clean-sheets",
+        n_clicks=0,
+        style={"cursor": "pointer", "position": "relative"},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — SHOTS CONCEDED OVERVIEW
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -560,12 +773,21 @@ def _section_origin_breakdown(d: dict) -> html.Div:
             )
         )
 
+    # Penalty card — appended last; reads pre-aggregated columns from parquet
+    _pen = d.get("penalty_stats_conceded", {})
+    cards.append(penalty_origin_card(
+        awarded=_pen.get("awarded", 0),
+        scored=_pen.get("scored", 0),
+        conversion_rate=_pen.get("conversion_rate"),
+        card_id="opp-season-cc-conceded-kpi-origin-penalty",
+    ))
+
     return html.Div(
         [
             html.H6("ATTACK ORIGIN BREAKDOWN", className="buildup-subsection-title"),
             html.Div(
                 "How the opponent built each shot conceded — "
-                "priority: Set Piece → High Regain → Cross → Through Ball → Cut Back → Combination",
+                "priority: Set Piece → High Regain → Cross → Through Ball → Cut Back → Combination · Penalty",
                 style={"fontSize": "0.78rem", "color": "var(--text-muted)",
                        "marginBottom": "0.6rem"},
             ),
@@ -811,6 +1033,15 @@ def _section_shot_quality_tiers(d: dict) -> html.Div:
 def _build_all_modals() -> list:
     modals = []
 
+    # Clean sheet modal
+    modals.append(build_unified_modal(
+        modal_id="opp-season-cc-conceded-modal-clean-sheets",
+        title_id="opp-season-cc-conceded-modal-clean-sheets-title",
+        body_id ="opp-season-cc-conceded-modal-clean-sheets-body",
+        title   ="Clean Sheets — League Comparison",
+        size    ="md",
+    ))
+
     # Overview KPI modals
     for slug, title in [
         ("shots-pm",       "Shots / Match — League Comparison"),
@@ -901,6 +1132,20 @@ def build_cc_conceded_section(season: str, team_name: str) -> html.Div:
             _cc_store(d),
             *_build_all_modals(),
             *([] if no_data_banner is None else [no_data_banner]),
+
+            # Clean Sheet card — first in the Chances Conceded section
+            html.Div(
+                [
+                    html.H6("CLEAN SHEETS", className="buildup-subsection-title"),
+                    html.Div(
+                        build_clean_sheet_card(season, team_name),
+                        className="team-kpi-row",
+                    ),
+                ],
+                style={"marginBottom": "1.5rem"},
+            ),
+
+            _hr,
 
             # Section 1 — Shots overview KPIs
             html.Div(_section_shots_overview(d), style={"marginBottom": "1.5rem"}),

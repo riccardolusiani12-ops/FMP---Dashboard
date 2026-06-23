@@ -12,5 +12,19 @@ plotly==6.5.0
 pandas==2.3.3
 numpy==2.3.5
 pyarrow==22.0.0
+# scikit-learn is REQUIRED to unpickle the Possession Value ML model
+# (src/models/pv_model_serie_a.pkl — a LogisticRegression + StandardScaler).
+# If this import fails at runtime, PossessionValueModel.score()/.delta() silently
+# return 0.0 (no exception) — the whole Possession Value section then shows 0.00
+# everywhere and the event map renders every dot green. So the ML PV engine must
+# NOT be deployed without it.
+#
+# IMPORTANT: it must be installed in the *active* interpreter that launches app.py,
+# not merely listed here. Verify with the SAME python you run the app with, e.g.:
+#     <that-python> -c "import sklearn; print(sklearn.__version__)"
+# Installing into a different conda env / venv does nothing for the running app.
+# Pinned to the version the dashboard is validated against; the pickle carries no
+# embedded sklearn version, so a different major version could break unpickling
+# (validated working under both Python 3.11 and 3.14 with scikit-learn 1.7.2).
 scikit-learn==1.7.2
 kaleido==1.2.0

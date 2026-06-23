@@ -10,6 +10,9 @@ final_third_cards.py.
 
 from __future__ import annotations
 
+from typing import Union
+
+import pandas as pd
 from dash import html, dcc
 import plotly.graph_objects as go
 
@@ -80,6 +83,183 @@ ROW_META = {
     "SoT%": {"color": "#f43f5e", "fmt": ".1f%"},
     "GS":   {"color": "#22c55e", "fmt": "d"},
 }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PENALTY STAT HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def extract_penalty_stats(
+    shots: Union[list, pd.DataFrame],
+    team: str | None = None,
+) -> dict:
+    """Return penalty counts for the given shot collection.
+
+    ``is_penalty`` is set by ``ChanceCreationAnalyzer._extract_shots()`` at
+    analysis time (per-match list path) or written into ``shots_{season}.parquet``
+    by ``precompute_season_offensive()`` (season-aggregate DataFrame path).
+    Both paths are handled transparently.
+
+    Parameters
+    ----------
+    shots:
+        Either a ``list[dict]`` (shots_detail from per-match analysis) or a
+        ``pd.DataFrame`` (rows from ``shots_{season}.parquet``).
+    team:
+        Optional canonical team name.  When supplied, only rows whose ``team``
+        column matches (case-insensitive, via ``canonical_name``) are counted.
+        Ignored when the caller has already pre-filtered to one team.
+
+    Returns
+    -------
+    dict with keys:
+        awarded          – int: penalty shots taken (type_id in 13/14/15/16 with Penalty="Si")
+        scored           – int: subset where is_goal is True
+        conversion_rate  – float | None: scored/awarded*100 (1 dp), None if awarded==0
+    """
+    from src.team_mapping import canonical_name as _cn
+
+    if isinstance(shots, pd.DataFrame):
+        df = shots
+        if team is not None and "team" in df.columns:
+            target = _cn(team).lower()
+            df = df[df["team"].apply(lambda t: _cn(str(t)).lower() == target)]
+        if "is_penalty" not in df.columns:
+            return {"awarded": 0, "scored": 0, "conversion_rate": None}
+        pen = df[df["is_penalty"] == True]  # noqa: E712
+        awarded = int(len(pen))
+        scored  = int(pen["is_goal"].sum()) if "is_goal" in pen.columns else 0
+    else:
+        rows = shots
+        if team is not None:
+            target = _cn(team).lower()
+            rows = [s for s in rows if _cn(str(s.get("team", ""))).lower() == target]
+        awarded = sum(1 for s in rows if s.get("is_penalty"))
+        scored  = sum(1 for s in rows if s.get("is_penalty") and s.get("is_goal"))
+
+    conversion_rate = (
+        round(scored / awarded * 100, 1) if awarded > 0 else None
+    )
+    return {"awarded": awarded, "scored": scored, "conversion_rate": conversion_rate}
+
+
+def set_piece_count_excl_penalties(
+    shots: Union[list, pd.DataFrame],
+    team: str | None = None,
+) -> int:
+    """Return the Set Piece shot count with penalty shots subtracted.
+
+    Penalties are classified as "Set Piece" by ``classify_attack_origin()``
+    (via the direct-qualifier path).  This helper removes them so the Set Piece
+    card reflects only corners, free kicks, and throw-ins.
+
+    Parameters
+    ----------
+    shots:
+        Either a ``list[dict]`` (shots_detail from per-match analysis) or a
+        ``pd.DataFrame`` (rows from ``shots_{season}.parquet``).
+    team:
+        Optional canonical team name filter (same semantics as
+        ``extract_penalty_stats``).
+
+    Returns
+    -------
+    int – count of shots where ``origin == "Set Piece"`` AND ``is_penalty`` is falsy.
+    """
+    from src.team_mapping import canonical_name as _cn
+
+    if isinstance(shots, pd.DataFrame):
+        df = shots
+        if team is not None and "team" in df.columns:
+            target = _cn(team).lower()
+            df = df[df["team"].apply(lambda t: _cn(str(t)).lower() == target)]
+        if "is_penalty" not in df.columns:
+            # Parquet pre-dates the column — fall back to raw Set Piece count
+            return int((df["origin"] == "Set Piece").sum()) if "origin" in df.columns else 0
+        mask = (df["origin"] == "Set Piece") & (~df["is_penalty"].fillna(False))
+        return int(mask.sum())
+    else:
+        return sum(
+            1 for s in shots
+            if s.get("origin") == "Set Piece" and not s.get("is_penalty", False)
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PENALTY CARD COMPONENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Visual identity for the Penalty card — matches the Set Piece green family
+# (penalties are a Set Piece sub-type) with a distinct dot-circle icon.
+_PENALTY_COLOR = SEMANTIC_COLORS["origin_set_piece"]
+_PENALTY_ICON  = "bi-dot"
+
+
+def penalty_origin_card(
+    awarded: int,
+    scored: int,
+    conversion_rate: float | None,
+    card_id: str | None = None,
+) -> html.Div:
+    """Penalty origin card for the Attack Origin Breakdown row.
+
+    Visually identical to the other origin cards in ``_section_origin_breakdown``
+    (same container class ``kpi-card``, same ``kpi-icon`` / ``kpi-text`` layout,
+    same CSS variable references).  Penalty is always placed LAST in the row.
+
+    Parameters
+    ----------
+    awarded:
+        Total penalties awarded (shot rows with is_penalty=True).
+    scored:
+        Penalties that resulted in a goal.
+    conversion_rate:
+        ``scored / awarded * 100`` rounded to 1 dp, or ``None`` if awarded==0.
+    card_id:
+        Optional component id (required only for the season-aggregate defensive
+        location which registers a callback on the card).
+
+    Theme compatibility
+    -------------------
+    Uses only existing CSS variables (``var(--text-muted)``, ``kpi-card``,
+    ``kpi-label``, ``kpi-value``, ``kpi-subtitle``, ``kpi-icon``, ``kpi-text``).
+    No new CSS classes are introduced.
+    """
+    if awarded == 0:
+        primary_value = "—"
+        subtitle_text = "No penalties"
+    else:
+        primary_value = str(scored)
+        conv_str = f"{conversion_rate}%" if conversion_rate is not None else "—"
+        subtitle_text = f"{awarded} awarded · {conv_str} conv."
+
+    children = [
+        html.Div(
+            html.I(
+                className=f"bi {_PENALTY_ICON}",
+                style={"color": _PENALTY_COLOR, "fontSize": "1.1rem"},
+            ),
+            className="kpi-icon",
+        ),
+        html.Div(
+            [
+                html.Span("Penalty", className="kpi-label"),
+                html.Span(primary_value, className="kpi-value"),
+                html.Span(
+                    subtitle_text,
+                    className="kpi-subtitle",
+                    style={"color": _PENALTY_COLOR},
+                ),
+            ],
+            className="kpi-text",
+        ),
+    ]
+
+    kwargs: dict = {"className": "kpi-card"}
+    if card_id is not None:
+        kwargs["id"] = card_id
+
+    return html.Div(children, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -357,10 +537,16 @@ def _section_origin_breakdown(shots_detail: list) -> html.Div:
         showlegend=False,
     )
 
+    # Penalty stats and adjusted Set Piece count (penalty shots excluded from Set Piece)
+    _pen_stats_detail = extract_penalty_stats(shots_detail)
+    _sp_excl          = set_piece_count_excl_penalties(shots_detail)
+
     # KPI cards per origin
     cards = []
     for origin in ORIGIN_LABELS:
         count = counts[origin]
+        if origin == "Set Piece":
+            count = _sp_excl
         if count == 0:
             continue
         pct = round(count / total * 100, 1)
@@ -398,11 +584,18 @@ def _section_origin_breakdown(shots_detail: list) -> html.Div:
             )
         )
 
+    # Penalty card appended last
+    cards.append(penalty_origin_card(
+        awarded=_pen_stats_detail["awarded"],
+        scored=_pen_stats_detail["scored"],
+        conversion_rate=_pen_stats_detail["conversion_rate"],
+    ))
+
     return html.Div(
         [
             html.H6("Attack Origin Breakdown", className="buildup-subsection-title"),
             html.Div(
-                "Priority: Set Piece → High Regain → Counter → Cross → Through Ball → Combination (default)",
+                "Priority: Set Piece → High Regain → Counter → Cross → Through Ball → Combination · Penalty",
                 style={
                     "fontSize": "0.78rem",
                     "color": "var(--text-muted)",

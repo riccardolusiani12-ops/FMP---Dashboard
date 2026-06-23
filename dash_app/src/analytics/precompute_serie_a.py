@@ -195,7 +195,33 @@ def precompute_season(season: str) -> dict[str, pd.DataFrame]:
     # ── 13. Chances Conceded season aggregate ──────────────────────────
     precompute_season_chances_conceded(season)
 
+    # ── 13b. Transitions Overview season aggregate (off + def) ─────────
+    precompute_season_transitions(season)
+
+    # ── 13c. Set Pieces Overview — Corner Kicks season aggregate ───────
+    precompute_season_corner_kicks(season)
+
+    # ── 14. Season Player Analysis aggregate (additive, isolated) ──────
+    # High-cost (~6 min/season): builds the per-match PV bundle for every match.
+    # Skipped automatically if the parquet already exists and raw data is not
+    # newer — see precompute_season_players_if_needed().
+    precompute_season_players_if_needed(season)
+
     return results
+
+
+def precompute_season_players_if_needed(season: str) -> None:
+    """
+    Run the season-aggregate Player Analysis precompute only when its parquet is
+    missing.  Isolated, additive hook — kept separate so the expensive player
+    pass can be skipped/forced independently of every other season artifact.
+    """
+    out_path = READY_DATA_DIR / f"player_season_{season}.parquet"
+    if out_path.exists():
+        print(f"  ✓ Season Player Analysis: {out_path.name} present — skipping")
+        return
+    from src.analytics.season_player_analysis import precompute_season_players
+    precompute_season_players(season)
 
 
 def _build_team_overview(
@@ -399,6 +425,7 @@ def precompute_season_offensive(season: str) -> None:
                         "quality_tier":  int(sh.get("quality_tier", 0)),
                         "minute":        sh.get("minute", 0),
                         "player":        sh.get("player", ""),
+                        "is_penalty":    bool(sh.get("is_penalty", False)),
                     })
             except Exception as exc:
                 print(f"    ⚠ CC {team} {f.name}: {exc}")
@@ -1111,6 +1138,10 @@ def precompute_season_chances_conceded(season: str) -> None:
                 if s.get("is_goal"):
                     origin_goals[origin] += 1
 
+        # Penalty stats conceded (opponent's penalties against this team)
+        penalties_awarded_conceded = sum(1 for s in all_shots if s.get("is_penalty"))
+        penalties_scored_conceded  = sum(1 for s in all_shots if s.get("is_penalty") and s.get("is_goal"))
+
         safe_total = max(total_shots, 1)
 
         # Shot coordinate array — normalise outcome to 4 labels
@@ -1167,11 +1198,35 @@ def precompute_season_chances_conceded(season: str) -> None:
             "zone_shot_counts_json":      _json.dumps({str(k): v for k, v in zone_shot_counts.items()}),
         }
 
+        # Penalty columns (opponent penalties conceded against this team)
+        pen_conv_conceded = (
+            round(penalties_scored_conceded / penalties_awarded_conceded * 100, 1)
+            if penalties_awarded_conceded > 0 else None
+        )
+        row["penalty_awarded_conceded"]    = penalties_awarded_conceded
+        row["penalty_scored_conceded"]     = penalties_scored_conceded
+        row["penalty_conversion_conceded"] = pen_conv_conceded
+
         # Attack origin columns (flat, one quintuple per origin)
+        # set_piece_total excludes penalties so the Penalty card is additive.
+        penalty_shot_count = sum(
+            1 for s in all_shots
+            if s.get("origin") == "Set Piece" and s.get("is_penalty")
+        )
         for origin in ORIGIN_LABELS:
             slug  = origin.lower().replace(" ", "_")
             cnt   = origin_counts.get(origin, 0)
             goals = origin_goals.get(origin, 0)
+            if origin == "Set Piece":
+                # Subtract penalty shots so Set Piece card excludes penalties
+                sp_pen_goals = sum(
+                    1 for s in all_shots
+                    if s.get("origin") == "Set Piece"
+                    and s.get("is_penalty")
+                    and s.get("is_goal")
+                )
+                cnt   = max(cnt - penalty_shot_count, 0)
+                goals = max(goals - sp_pen_goals, 0)
             row[f"{slug}_total"]          = cnt
             row[f"{slug}_per_match"]      = round(cnt / mp, 1)
             row[f"{slug}_pct"]            = round(cnt / safe_total * 100, 1)
@@ -1195,6 +1250,357 @@ def precompute_season_chances_conceded(season: str) -> None:
         )
 
     print(f"  ✓ Chances Conceded precompute done in {time.time()-t0:.1f}s")
+
+
+def precompute_season_transitions(season: str) -> None:
+    """
+    Precompute season-level Transitions Overview tables for ALL teams in a season.
+
+    Iterates every match CSV, calls the existing (untouched) analytics —
+    analyse_offensive_transitions() and analyse_defensive_structure() — for each
+    (team, match) and saves ONE Parquet file to data/ready/:
+
+        transitions_summary_{season}.parquet  — one row per team
+
+    Schema (off_ = offensive, def_ = defensive; per-match values are means,
+    totals are sums):
+      season, team, matches_played,
+
+      -- Offensive (P1/P2/P3) --
+      off_total_total, off_total_per_match,
+      off_qualified_total, off_qualified_per_match,
+      off_transition_rate,                       (qualified / total, %)
+      off_p1_total, off_p2_total, off_p3_total,
+      off_outcomes_by_zone_json,                 ({"mid": {"P1":n,...}, ...})
+      off_outcomes_by_corridor_json,             ({"L": {"P1":n,...}, ...})
+      off_zone_lights_json,                      ({zone_id: P2+P3 count} 18-zone)
+
+      -- Defensive (N1/N2/N3) --
+      def_total_total, def_total_per_match,
+      def_qualified_total, def_qualified_per_match,
+      def_transition_rate,
+      def_immediate_press_rate, def_drop_back_rate,   (means across matches)
+      def_n1_total, def_n2_total, def_n3_total,
+      def_outcomes_by_zone_json,                 ({"high": {"N1":n,...}, ...})
+      def_outcomes_by_corridor_json,
+      def_zone_lights_json,                      ({zone_id: N2+N3 count} 18-zone)
+
+    The "zone_lights" dicts power the Origins density map: each origin (x, y)
+    from transition_origins is mapped to an 18-zone via xy_to_zone(), and only
+    P2/P3 (offensive) or N2/N3 (defensive) outcomes are counted — the brighter
+    a zone, the more genuinely threatening transitions originated there.
+    """
+    import json as _json
+    from src.analytics.offensive_transitions import analyse_offensive_transitions
+    from src.analytics.defensive_structure import analyse_defensive_structure
+    from src.analytics.goalkeeper_buildup import xy_to_zone as _xy_to_zone
+    from src.utils.paths import list_match_files, parse_match_filename
+
+    season_label = season.replace("_", "/")
+    print(f"\n  — Transitions Overview precompute: {season_label}")
+    t0 = time.time()
+
+    out_path = READY_DATA_DIR / f"transitions_summary_{season}.parquet"
+
+    files = list_match_files(season)
+    if not files:
+        print(f"  ⚠ No match files found for {season_label}")
+        return
+
+    # {team: {"off": [result, ...], "def": [result, ...]}}
+    per_match: dict[str, dict[str, list[dict]]] = {}
+
+    for f in files:
+        info = parse_match_filename(f)
+        home = canonical_name(info["home"])
+        away = canonical_name(info["away"])
+
+        for team in (home, away):
+            try:
+                off_res = analyse_offensive_transitions(f, team)
+            except Exception as exc:
+                print(f"    ⚠ Off-transitions {team} {f.name}: {exc}")
+                off_res = None
+            try:
+                def_full = analyse_defensive_structure(f, team)
+            except Exception as exc:
+                print(f"    ⚠ Def-transitions {team} {f.name}: {exc}")
+                def_full = None
+
+            if team not in per_match:
+                per_match[team] = {"off": [], "def": []}
+            if off_res is not None:
+                per_match[team]["off"].append(off_res)
+            if def_full is not None:
+                per_match[team]["def"].append(def_full)
+
+    match_counts: dict[str, int] = {}
+    for f in files:
+        info = parse_match_filename(f)
+        for team in (canonical_name(info["home"]), canonical_name(info["away"])):
+            match_counts[team] = match_counts.get(team, 0) + 1
+
+    def _accumulate_split(results: list[dict], tiers: tuple[str, str, str],
+                          zone_keys: tuple[str, ...]) -> dict:
+        """Sum outcomes_by_zone / outcomes_by_corridor across matches."""
+        t1, t2, t3 = tiers
+        by_zone = {zk: {t1: 0, t2: 0, t3: 0} for zk in zone_keys}
+        by_corr = {c: {t1: 0, t2: 0, t3: 0} for c in ("L", "C", "R")}
+        for r in results:
+            rz = r.get("outcomes_by_zone", {})
+            for zk in zone_keys:
+                for t in (t1, t2, t3):
+                    by_zone[zk][t] += rz.get(zk, {}).get(t, 0)
+            rc = r.get("outcomes_by_corridor", {})
+            for c in ("L", "C", "R"):
+                for t in (t1, t2, t3):
+                    by_corr[c][t] += rc.get(c, {}).get(t, 0)
+        return {"by_zone": by_zone, "by_corridor": by_corr}
+
+    def _zone_lights(results: list[dict], threat_tiers: tuple[str, str]) -> dict[int, int]:
+        """Per-18-zone count of origins that reached a 'threat' tier (P2/P3 or N2/N3)."""
+        lights: dict[int, int] = {}
+        for r in results:
+            for o in r.get("transition_origins", []):
+                if o.get("outcome") not in threat_tiers:
+                    continue
+                try:
+                    z = _xy_to_zone(float(o.get("x", 50.0)), float(o.get("y", 50.0)))
+                except (TypeError, ValueError):
+                    continue
+                lights[z] = lights.get(z, 0) + 1
+        return lights
+
+    summary_rows: list[dict] = []
+    for team, sides in per_match.items():
+        mp = max(match_counts.get(team, 1), 1)
+        off = sides["off"]
+        dfn = sides["def"]
+
+        # ── Offensive (P1/P2/P3) ────────────────────────────────────────────
+        off_total     = sum(r.get("total_transitions", 0) for r in off)
+        off_qualified = sum(r.get("qualified_transitions", 0) for r in off)
+        off_p1 = sum(r.get("outcome_distribution", {}).get("P1", 0) for r in off)
+        off_p2 = sum(r.get("outcome_distribution", {}).get("P2", 0) for r in off)
+        off_p3 = sum(r.get("outcome_distribution", {}).get("P3", 0) for r in off)
+        off_split  = _accumulate_split(off, ("P1", "P2", "P3"),
+                                       ("mid", "mid_low", "low"))
+        off_lights = _zone_lights(off, ("P2", "P3"))
+
+        # ── Defensive (N1/N2/N3) ────────────────────────────────────────────
+        def_total     = sum(r.get("total_transitions", 0) for r in dfn)
+        def_qualified = sum(r.get("qualified_transitions", 0) for r in dfn)
+        def_n1 = sum(r.get("outcome_distribution", {}).get("N1", 0) for r in dfn)
+        def_n2 = sum(r.get("outcome_distribution", {}).get("N2", 0) for r in dfn)
+        def_n3 = sum(r.get("outcome_distribution", {}).get("N3", 0) for r in dfn)
+        def_split  = _accumulate_split(dfn, ("N1", "N2", "N3"),
+                                       ("high", "mid", "low"))
+        def_lights = _zone_lights(dfn, ("N2", "N3"))
+
+        # Press/drop rates are already per-match percentages — average them.
+        press_vals = [r.get("immediate_press_rate", 0.0) for r in dfn]
+        drop_vals  = [r.get("drop_back_rate", 0.0) for r in dfn]
+        def_immediate_press = round(sum(press_vals) / len(press_vals), 1) if press_vals else 0.0
+        def_drop_back       = round(sum(drop_vals) / len(drop_vals), 1) if drop_vals else 0.0
+
+        summary_rows.append({
+            "season":         season_label,
+            "team":           team,
+            "matches_played": mp,
+            # Offensive
+            "off_total_total":         off_total,
+            "off_total_per_match":     round(off_total / mp, 1),
+            "off_qualified_total":     off_qualified,
+            "off_qualified_per_match": round(off_qualified / mp, 1),
+            "off_transition_rate":     round(off_qualified / off_total * 100, 1) if off_total else 0.0,
+            "off_p1_total":            off_p1,
+            "off_p2_total":            off_p2,
+            "off_p3_total":            off_p3,
+            "off_outcomes_by_zone_json":     _json.dumps(off_split["by_zone"]),
+            "off_outcomes_by_corridor_json": _json.dumps(off_split["by_corridor"]),
+            "off_zone_lights_json":          _json.dumps({str(k): v for k, v in off_lights.items()}),
+            # Defensive
+            "def_total_total":         def_total,
+            "def_total_per_match":     round(def_total / mp, 1),
+            "def_qualified_total":     def_qualified,
+            "def_qualified_per_match": round(def_qualified / mp, 1),
+            "def_transition_rate":     round(def_qualified / def_total * 100, 1) if def_total else 0.0,
+            "def_immediate_press_rate": def_immediate_press,
+            "def_drop_back_rate":       def_drop_back,
+            "def_n1_total":            def_n1,
+            "def_n2_total":            def_n2,
+            "def_n3_total":            def_n3,
+            "def_outcomes_by_zone_json":     _json.dumps(def_split["by_zone"]),
+            "def_outcomes_by_corridor_json": _json.dumps(def_split["by_corridor"]),
+            "def_zone_lights_json":          _json.dumps({str(k): v for k, v in def_lights.items()}),
+        })
+
+    if summary_rows:
+        _save_parquet(
+            pd.DataFrame(summary_rows),
+            out_path,
+            "Transitions Overview summary",
+        )
+
+    print(f"  ✓ Transitions Overview precompute done in {time.time()-t0:.1f}s")
+
+
+def precompute_season_corner_kicks(season: str) -> None:
+    """
+    Precompute season-level Corner Kicks (Set Pieces) tables for ALL teams.
+
+    Iterates every match CSV, calls the existing (untouched) analytics —
+    analyse_corner_kicks() — for each (team, match) and saves ONE Parquet file:
+
+        corner_kicks_summary_{season}.parquet  — one row per team
+
+    Schema (one row per team):
+      season, team, matches_played,
+      total_corners,
+      goals, shot_on_target, shot_off_target, cleared, second_phase,
+                                  (sums of the analyse_corner_kicks outcomes
+                                   dict — goals already includes own goals)
+      conversion_rate,            (goals / total_corners * 100, season ratio)
+      delivery_counts_json,       ({"Inswinger": n, ...} summed)
+      delivery_outcomes_json,     ({"Inswinger": {"Goal": n, "Own Goal": n,
+                                     "Shot on Target": n, ...}, ...} summed —
+                                   Own Goal kept as its own key)
+      zone_counts_json,           ({"GA1": n, ..., "Edge": n, "Unknown": n})
+      corners_json,               (list of per-corner records concatenated
+                                   across all matches: is_left, end_x, end_y,
+                                   outcome, delivery, zone, taker — needed to
+                                   rebuild the two season delivery maps)
+
+    Mirrors precompute_season_transitions() exactly.
+    """
+    import json as _json
+    from src.analytics.corner_kicks import analyse_corner_kicks
+    from src.utils.paths import list_match_files, parse_match_filename
+
+    season_label = season.replace("_", "/")
+    print(f"\n  — Corner Kicks (Set Pieces) precompute: {season_label}")
+    t0 = time.time()
+
+    out_path = READY_DATA_DIR / f"corner_kicks_summary_{season}.parquet"
+
+    files = list_match_files(season)
+    if not files:
+        print(f"  ⚠ No match files found for {season_label}")
+        return
+
+    # Delivery types and outcome keys (verbatim from analyse_corner_kicks)
+    _DELIVERY_TYPES = ["Inswinger", "Outswinger", "Straight", "Short", "Unknown"]
+    _OUTCOME_KEYS = ["Goal", "Own Goal", "Shot on Target", "Shot off Target",
+                     "Cleared", "Second Phase Attack"]
+    _ZONE_KEYS = ["GA1", "GA2", "GA3", "CA1", "CA2", "CA3",
+                  "Front", "Back", "Edge", "Unknown"]
+
+    # {team: list of analyse_corner_kicks results}
+    per_match: dict[str, list[dict]] = {}
+
+    for f in files:
+        info = parse_match_filename(f)
+        home = canonical_name(info["home"])
+        away = canonical_name(info["away"])
+
+        for team in (home, away):
+            try:
+                res = analyse_corner_kicks(f, team)
+            except Exception as exc:
+                print(f"    ⚠ Corner kicks {team} {f.name}: {exc}")
+                res = None
+            per_match.setdefault(team, [])
+            if res is not None:
+                per_match[team].append(res)
+
+    match_counts: dict[str, int] = {}
+    for f in files:
+        info = parse_match_filename(f)
+        for team in (canonical_name(info["home"]), canonical_name(info["away"])):
+            match_counts[team] = match_counts.get(team, 0) + 1
+
+    summary_rows: list[dict] = []
+    for team, results in per_match.items():
+        mp = max(match_counts.get(team, 1), 1)
+
+        total_corners = sum(r.get("total", 0) for r in results)
+
+        out = {"goal": 0, "shot_on_target": 0, "shot_off_target": 0,
+               "cleared": 0, "second_phase": 0}
+        for r in results:
+            ro = r.get("outcomes", {})
+            for k in out:
+                out[k] += int(ro.get(k, 0) or 0)
+
+        # Delivery counts (summed)
+        delivery_counts = {d: 0 for d in _DELIVERY_TYPES}
+        for r in results:
+            for d, n in r.get("delivery_counts", {}).items():
+                delivery_counts[d] = delivery_counts.get(d, 0) + int(n or 0)
+
+        # Delivery outcomes (summed nested dict, Own Goal key intact)
+        delivery_outcomes = {
+            d: {o: 0 for o in _OUTCOME_KEYS} for d in _DELIVERY_TYPES
+        }
+        for r in results:
+            for d, od in r.get("delivery_outcomes", {}).items():
+                delivery_outcomes.setdefault(d, {o: 0 for o in _OUTCOME_KEYS})
+                for o, n in od.items():
+                    delivery_outcomes[d][o] = delivery_outcomes[d].get(o, 0) + int(n or 0)
+
+        # Zone counts (summed)
+        zone_counts = {z: 0 for z in _ZONE_KEYS}
+        for r in results:
+            for z, n in r.get("zone_counts", {}).items():
+                zone_counts[z] = zone_counts.get(z, 0) + int(n or 0)
+
+        # Per-corner records concatenated (only the fields the maps need)
+        corners: list[dict] = []
+        for r in results:
+            for c in r.get("corners", []):
+                corners.append({
+                    "is_left":  bool(c.get("is_left", True)),
+                    "end_x":    c.get("end_x"),
+                    "end_y":    c.get("end_y"),
+                    "outcome":  c.get("outcome", "Cleared"),
+                    "delivery": c.get("delivery", "Unknown"),
+                    "zone":     c.get("zone", "Unknown"),
+                    "taker":    c.get("taker"),
+                })
+
+        conversion_rate = round(out["goal"] / total_corners * 100, 1) if total_corners else 0.0
+
+        summary_rows.append({
+            "season":          season_label,
+            "team":            team,
+            "matches_played":  mp,
+            "total_corners":   total_corners,
+            "total_per_match": round(total_corners / mp, 1),
+            "goals":           out["goal"],
+            "goals_per_match": round(out["goal"] / mp, 1),
+            "shot_on_target":  out["shot_on_target"],
+            "sot_per_match":   round(out["shot_on_target"] / mp, 1),
+            "shot_off_target": out["shot_off_target"],
+            "soff_per_match":  round(out["shot_off_target"] / mp, 1),
+            "cleared":         out["cleared"],
+            "cleared_per_match": round(out["cleared"] / mp, 1),
+            "second_phase":    out["second_phase"],
+            "second_phase_per_match": round(out["second_phase"] / mp, 1),
+            "conversion_rate": conversion_rate,
+            "delivery_counts_json":   _json.dumps(delivery_counts),
+            "delivery_outcomes_json": _json.dumps(delivery_outcomes),
+            "zone_counts_json":       _json.dumps(zone_counts),
+            "corners_json":           _json.dumps(corners),
+        })
+
+    if summary_rows:
+        _save_parquet(
+            pd.DataFrame(summary_rows),
+            out_path,
+            "Corner Kicks (Set Pieces) summary",
+        )
+
+    print(f"  ✓ Corner Kicks precompute done in {time.time()-t0:.1f}s")
 
 
 def precompute_all(seasons: list[str] | None = None) -> None:

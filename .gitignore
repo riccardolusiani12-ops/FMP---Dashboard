@@ -19,6 +19,14 @@ venv/
 # ── Large model/feature files (>100MB – GitHub limit) ──────────────────────────
 data/serie_a_pv_features.parquet
 
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Generated outputs ─────────────────────────────────────────────────────────
+graphify-out/
+outputs/
+
 # ── OS / Editor ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
