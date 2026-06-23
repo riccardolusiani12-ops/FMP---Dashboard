@@ -270,6 +270,24 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                         className="chart-section",
                     ),
 
+                    # Section: Playing Style Wheel
+                    html.Div(
+                        [
+                            _ds_header(
+                                "Style Profile", "bi-pie-chart-fill",
+                                "Playing Style Wheel",
+                                "12 KPIs across four phases — each a within-"
+                                "Serie A season percentile (0–99)",
+                            ),
+                            dcc.Loading(
+                                html.Div(id="team-ps-container"),
+                                type="circle",
+                                color="#8a1f33",
+                            ),
+                        ],
+                        className="chart-section",
+                    ),
+
                     _placeholder_section(
                         "Expected Threat (xT)",
                         "bi-lightning-fill",
@@ -297,6 +315,14 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                 body_id="td-conceded-interval-modal-body",
                 title="Goals Conceded — 15-Minute Intervals",
                 size="lg",
+            ),
+            # Playing Style — league comparison table
+            build_unified_modal(
+                modal_id="team-ps-modal",
+                title_id="team-ps-modal-title",
+                body_id="team-ps-modal-body",
+                title="Playing Style — League Comparison (percentiles)",
+                size="xl",
             ),
         ],
         # "team-overview" scopes the Phase 1 design-system restyle to this page

@@ -33,6 +33,7 @@ from src.analytics.data_loader import (
     load_xg_summary,
     load_goal_distribution,
     load_team_average_age,
+    load_playing_style,
 )
 from src.styling.ui_components import build_unified_modal
 
@@ -982,6 +983,67 @@ def register_team_detail_callbacks(app):
         if dist_df is None or dist_df.empty:
             return html.P("No data available.", className="text-muted")
         return _build_single_metric_card(dist_df, metric="conceded")
+
+    # ══════════════════════════════════════════════════════════
+    # PLAYING STYLE WHEEL SECTION
+    # ══════════════════════════════════════════════════════════
+
+    # ── Wheel render — reacts to team, season and theme ──
+    @app.callback(
+        Output("team-ps-container", "children"),
+        Input("team-context", "data"),
+        Input("team-season-selector", "value"),
+        Input("theme-store", "data"),
+        prevent_initial_call=True,
+    )
+    def update_playing_style(context: dict, selected_season: str, theme: str):
+        """Render the Playing Style Wheel for the selected team/season/theme.
+
+        Theme is a true Input (not State) because the client-side toggle
+        observer does not re-patch polar charts — the wheel rebuilds here.
+        """
+        from src.components.playing_style_cards import playing_style_wheel_card
+        team = (context or {}).get("team", "")
+        if not team or not selected_season:
+            return html.P("Select a team and season.", className="text-muted")
+        df_league = load_playing_style(selected_season)
+        return playing_style_wheel_card(
+            team, selected_season, df_league, theme=theme or "dark",
+        )
+
+    # ── Modal open/close ──
+    @app.callback(
+        Output("team-ps-modal", "is_open"),
+        Input("team-ps-modal-open", "n_clicks"),
+        State("team-ps-modal", "is_open"),
+        prevent_initial_call=True,
+    )
+    def toggle_playing_style_modal(n_clicks, is_open):
+        if n_clicks:
+            return not is_open
+        return is_open
+
+    # ── Modal body — league comparison table ──
+    @app.callback(
+        Output("team-ps-modal-body", "children"),
+        Input("team-ps-modal-open", "n_clicks"),
+        State("team-season-selector", "value"),
+        State("team-context", "data"),
+        prevent_initial_call=True,
+    )
+    def load_playing_style_modal(n_clicks, selected_season, context):
+        if not n_clicks:
+            return no_update
+        from src.components.playing_style_cards import _build_league_comparison_table
+        team = (context or {}).get("team", "")
+        df_league = load_playing_style(selected_season)
+        if df_league is None or df_league.empty:
+            return html.P("No data available.", className="text-muted")
+        return _build_league_comparison_table(df_league, team)
+
+    # ── Per-KPI explanation modals (12 open/close callbacks) ──
+    from src.components.playing_style_cards import register_playing_style_kpi_modals
+    register_playing_style_kpi_modals(app)
 
     def _build_single_metric_card(dist_df, metric: str) -> html.Div:
         """Render interval tiles for a single metric ('scored' or 'conceded')."""

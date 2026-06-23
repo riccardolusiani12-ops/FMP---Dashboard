@@ -233,6 +233,101 @@ body.light-theme,
     letter-spacing: 1.2px;
 }
 
+/* ── Playing Style Wheel ────────────────────────────────────────────────── */
+.team-overview .ps-wheel-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.team-overview .ps-wheel-graph {
+    width: 100%;
+    max-width: 560px;
+}
+
+.team-overview .ps-raw-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.5rem;
+    width: 100%;
+}
+
+@media (max-width: 900px) {
+    .team-overview .ps-raw-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 540px) {
+    .team-overview .ps-raw-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.team-overview .ps-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0.45rem 0.6rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+}
+
+.team-overview .ps-chip-label {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+    line-height: 1.1;
+}
+
+.team-overview .ps-chip-value {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.team-overview .ps-chip-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.3rem;
+}
+
+.team-overview .ps-chip-info {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.team-overview .ps-chip-clickable {
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.team-overview .ps-chip-clickable:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-subtle);
+}
+
+.team-overview .ps-chip-clickable:hover .ps-chip-info {
+    opacity: 1;
+}
+
+.ps-kpi-modal-body {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+.team-overview .ps-compare-btn-row {
+    display: flex;
+    justify-content: center;
+}
+
 /* ── End Phase 1 Additions ──────────────────────────────────────────────── */
 
 /* ═══════════════════════════════════════════════════════════════════════════

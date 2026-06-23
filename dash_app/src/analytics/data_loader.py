@@ -638,6 +638,21 @@ def load_team_average_age(team: str, season: str) -> Optional[float]:
     
     if not match.empty:
         return float(match.iloc[0]["avg_age"])
-    
+
     return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLAYING STYLE WHEEL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def load_playing_style(season: str) -> Optional[pd.DataFrame]:
+    """
+    Load the Playing Style Wheel league table for a season.
+
+    Columns: team, season, D1_raw, D1_pct, …, A3_raw, A3_pct (one row per team).
+    Returns None if the precomputed Parquet does not exist (e.g. season not yet
+    processed) — the callback renders an empty-state in that case.
+    """
+    return _read_parquet(str(READY_DATA_DIR / f"playing_style_league_{season}.parquet"))
 
