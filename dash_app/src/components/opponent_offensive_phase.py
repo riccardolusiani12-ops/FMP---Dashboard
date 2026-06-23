@@ -203,8 +203,8 @@ def _build_benchmark_bar(
     )
     apply_chart_theme(fig, "dark")
     fig.update_layout(
-        title=dict(text=title, font=dict(size=14, color="white")),
-        xaxis=dict(title=x_label, gridcolor="rgba(255,255,255,0.06)", zeroline=False),
+        title=dict(text=title, font=dict(size=14)),
+        xaxis=dict(title=x_label, zeroline=False),
         yaxis=dict(title="", autorange="reversed", tickfont=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",

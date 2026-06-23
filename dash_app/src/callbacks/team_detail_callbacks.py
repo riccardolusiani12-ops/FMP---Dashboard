@@ -722,9 +722,10 @@ def register_team_detail_callbacks(app):
         Output("goals-xg-block", "children"),
         Input("team-season-selector", "value"),
         Input("team-context", "data"),
+        Input("theme-store", "data"),
         prevent_initial_call=False,
     )
-    def update_goals_xg(selected_season: str, context: dict):
+    def update_goals_xg(selected_season: str, context: dict, theme: str):
         """Build the goals & xG stats block."""
         team = context.get("team", "")
         if not team or not selected_season:
@@ -780,7 +781,8 @@ def register_team_detail_callbacks(app):
         )
 
         # Build comparison bar chart
-        bar_fig = _build_goals_xg_bar_chart(gf, ga, xg_val, xgc_val, team)
+        bar_fig = _build_goals_xg_bar_chart(gf, ga, xg_val, xgc_val, team,
+                                             theme=theme or "dark")
 
         chart_div = html.Div(
             dcc.Graph(
@@ -866,7 +868,7 @@ def register_team_detail_callbacks(app):
         )
 
     def _build_goals_xg_bar_chart(
-        gf: int, ga: int, xg: float, xgc: float, team: str
+        gf: int, ga: int, xg: float, xgc: float, team: str, theme: str = "dark"
     ) -> go.Figure:
         """Build a grouped bar chart comparing Goals vs xG."""
         categories = ["Goals Scored", "Goals Conceded"]
@@ -905,10 +907,7 @@ def register_team_detail_callbacks(app):
             textfont=dict(size=13),
         ))
 
-        # Shared design-system theming first (fonts, transparent backgrounds,
-        # gridlines, legend, hover), chart specifics on top. Built dark; the
-        # client-side theme observer re-patches colours on light toggle.
-        apply_chart_theme(fig, "dark")
+        apply_chart_theme(fig, theme)
         fig.update_layout(
             title=dict(text=f"Goals vs Expected Goals — {team}"),
             barmode="group",
@@ -994,7 +993,7 @@ def register_team_detail_callbacks(app):
         Input("team-context", "data"),
         Input("team-season-selector", "value"),
         Input("theme-store", "data"),
-        prevent_initial_call=True,
+        prevent_initial_call=False,
     )
     def update_playing_style(context: dict, selected_season: str, theme: str):
         """Render the Playing Style Wheel for the selected team/season/theme.
@@ -1044,6 +1043,30 @@ def register_team_detail_callbacks(app):
     # ── Per-KPI explanation modals (12 open/close callbacks) ──
     from src.components.playing_style_cards import register_playing_style_kpi_modals
     register_playing_style_kpi_modals(app)
+
+    # ══════════════════════════════════════════════════════════
+    # STYLE EVOLUTION SECTION
+    # ══════════════════════════════════════════════════════════
+
+    @app.callback(
+        Output("team-ps-evo-container", "children"),
+        Input("team-context", "data"),
+        Input("theme-store", "data"),
+        prevent_initial_call=False,
+    )
+    def render_style_evolution(context: dict, theme: str):
+        from src.components.playing_style_evolution_cards import style_evolution_card
+        from src.analytics.data_loader import load_playing_style_all_seasons
+        team = (context or {}).get("team", "")
+        if not team:
+            return no_update
+        df_all = load_playing_style_all_seasons(team)
+        if df_all is None or df_all.empty:
+            return html.Div(
+                "No multi-season data available for this team.",
+                className="text-muted p-3",
+            )
+        return style_evolution_card(team, df_all, theme=theme or "dark")
 
     def _build_single_metric_card(dist_df, metric: str) -> html.Div:
         """Render interval tiles for a single metric ('scored' or 'conceded')."""

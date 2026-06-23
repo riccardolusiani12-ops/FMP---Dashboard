@@ -265,7 +265,7 @@ def load_league_pressing_summary(season: str) -> "pd.DataFrame | None":
 def _expand_icon() -> html.I:
     return html.I(
         className="bi bi-box-arrow-up-right",
-        style={"fontSize": "0.65rem", "color": "rgba(255,255,255,0.25)",
+        style={"fontSize": "0.65rem", "color": "var(--text-muted)",
                "position": "absolute", "top": "6px", "right": "8px"},
     )
 

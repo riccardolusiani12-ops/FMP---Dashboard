@@ -34,6 +34,7 @@ from src.analytics.player_analysis import (
 )
 from src.components.buildup_cards import _chain_connector, _chain_event_node
 from src.styling.pitch_utils import draw_pitch
+from src.styling.plotly_template import apply_chart_theme
 from src.styling.ui_components import build_unified_modal, ds_header
 from src.team_mapping import canonical_name, logo_url
 from src.utils.pv_model import PossessionValueModel
@@ -96,13 +97,13 @@ def _pv_overview_cards(pva: pd.DataFrame, team: str) -> dbc.Row:
                     ], style={"flex": "1"}),
                 ], className="d-flex"),
             ]), className="border-0 h-100",
-                style={"backgroundColor": "rgba(44,62,80,0.5)"}),
+                style={"backgroundColor": "var(--bg-card)"}),
             xs=12, md=8, lg=6, className="mb-3",
         ),
     ], className="g-3")
 
 
-def _pv_event_map(event_map: pd.DataFrame, team: str) -> dcc.Graph:
+def _pv_event_map(event_map: pd.DataFrame, team: str) -> html.Div:
     """Full-pitch scatter of the SELECTED team's scored events, by PV delta."""
     fig = go.Figure()
     draw_pitch(fig, theme="dark", half=None, height=460,
@@ -110,7 +111,8 @@ def _pv_event_map(event_map: pd.DataFrame, team: str) -> dcc.Graph:
                show_legend=False)
 
     if event_map is None or event_map.empty:
-        return dcc.Graph(figure=fig, config={"displayModeBar": False})
+        return html.Div(dcc.Graph(figure=fig, config={"displayModeBar": False}),
+                        className="pitch-dark-container")
 
     em = event_map.copy()
     mag = em["pv_delta"].abs()
@@ -144,7 +146,8 @@ def _pv_event_map(event_map: pd.DataFrame, team: str) -> dcc.Graph:
         ))
     fig.update_layout(showlegend=True,
                       legend=dict(orientation="h", y=-0.04, x=0.5, xanchor="center"))
-    return dcc.Graph(figure=fig, config={"displayModeBar": False})
+    return html.Div(dcc.Graph(figure=fig, config={"displayModeBar": False}),
+                    className="pitch-dark-container")
 
 
 def _swing_chips(swings: pd.DataFrame) -> html.Div:
@@ -224,15 +227,14 @@ def render_sequence_view(df: pd.DataFrame, poss_id: int, pv) -> html.Div:
         customdata=labels,
         hovertemplate="%{customdata}<br>Cumulative PV: %{y:.4f}<extra></extra>",
     ))
-    step.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", dash="dot"))
+    step.add_hline(y=0, line=dict(color="rgba(128,128,128,0.35)", dash="dot"))
+    apply_chart_theme(step, "dark")
     step.update_layout(
-        height=300, template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=300,
         margin=dict(l=40, r=20, t=30, b=30),
         title=dict(text="Cumulative Possession Value", font=dict(size=13)),
         xaxis=dict(title="Action #", showgrid=False),
-        yaxis=dict(title="Cumulative PV", showgrid=True,
-                   gridcolor="rgba(255,255,255,0.06)"),
+        yaxis=dict(title="Cumulative PV", showgrid=True),
     )
 
     # ── Pitch trace of the possession path ──
@@ -257,10 +259,13 @@ def render_sequence_view(df: pd.DataFrame, poss_id: int, pv) -> html.Div:
 
     return html.Div([
         html.Div(chain, className="mb-3",
-                 style={"background": "rgba(15,25,35,0.4)", "borderRadius": "8px"}),
+                 style={"background": "var(--bg-card)", "borderRadius": "8px",
+                        "border": "1px solid var(--border-light)"}),
         dbc.Row([
-            dbc.Col(dcc.Graph(figure=pitch, config={"displayModeBar": False}),
-                    xs=12, lg=6),
+            dbc.Col(html.Div(
+                        dcc.Graph(figure=pitch, config={"displayModeBar": False}),
+                        className="pitch-dark-container",
+                    ), xs=12, lg=6),
             dbc.Col(dcc.Graph(figure=step, config={"displayModeBar": False}),
                     xs=12, lg=6),
         ]),
@@ -302,13 +307,11 @@ def _leaderboard_figure(pva: pd.DataFrame, minutes: Dict[str, Any],
                        "Raw %{customdata[0]:+.3f} · %{customdata[1]:.0f} min<br>"
                        "%{customdata[2]}<extra></extra>"),
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
-        height=max(320, 26 * len(view) + 80), template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=max(320, 26 * len(view) + 80),
         margin=dict(l=10, r=20, t=20, b=40),
-        xaxis=dict(title="PVA per 90", showgrid=True,
-                   gridcolor="rgba(255,255,255,0.06)", zeroline=True,
-                   zerolinecolor="rgba(255,255,255,0.2)"),
+        xaxis=dict(title="PVA per 90", showgrid=True, zeroline=True),
         yaxis=dict(automargin=True),
     )
     return fig
@@ -386,13 +389,15 @@ def _section_possession_value(bundle: Dict[str, Any]) -> html.Div:
                   f"{canonical_name(team)} (ML model)."),
 
         # 1 — Match PV overview (selected team only)
-        html.H6("Team PV Overview", className="text-light mb-2"),
+        html.H6("Team PV Overview", className="mb-2",
+                style={"color": "var(--text-primary)"}),
         _pv_overview_cards(pva, team),
         _pv_event_map(bundle["event_map"], team),
         sep,
 
         # 2 — Possession sequence viewer (selected team's possessions only)
-        html.H6("Possession Sequence Viewer", className="text-light mb-2"),
+        html.H6("Possession Sequence Viewer", className="mb-2",
+                style={"color": "var(--text-primary)"}),
         html.P(f"{canonical_name(team)}'s highest-swing possessions "
                "(sum of |PV Δ| across the chain). Pick a chip or browse all.",
                className="text-muted", style={"fontSize": "0.75rem"}),
@@ -403,7 +408,8 @@ def _section_possession_value(bundle: Dict[str, Any]) -> html.Div:
         sep,
 
         # 3 — Leaderboards (selected team's players)
-        html.H6("Player Leaderboards (per 90)", className="text-light mb-2"),
+        html.H6("Player Leaderboards (per 90)", className="mb-2",
+                style={"color": "var(--text-primary)"}),
         _leaderboards_block(pva, bundle["minutes"], team),
     ], className="buildup-card ma-card")
 
@@ -480,7 +486,7 @@ def _kpi_rank_figure(kpi_df: pd.DataFrame, metric: str, top_n: int = 8) -> go.Fi
     """Horizontal bar chart ranking players on one metric (flat list, desc)."""
     fig = go.Figure()
     if kpi_df is None or kpi_df.empty or metric not in kpi_df.columns:
-        fig.update_layout(height=40, template="plotly_dark",
+        fig.update_layout(height=40,
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           margin=dict(l=0, r=0, t=0, b=0))
         return fig
@@ -498,12 +504,11 @@ def _kpi_rank_figure(kpi_df: pd.DataFrame, metric: str, top_n: int = 8) -> go.Fi
         textposition="auto", textfont=dict(size=10),
         hovertemplate="<b>%{y}</b><br>" + fmt + "<extra></extra>",
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
-        height=max(150, 24 * len(d) + 30), template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=max(150, 24 * len(d) + 30),
         margin=dict(l=4, r=10, t=4, b=20),
-        xaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.06)",
-                   showticklabels=False),
+        xaxis=dict(showgrid=True, showticklabels=False),
         yaxis=dict(automargin=True, tickfont=dict(size=10)),
     )
     return fig
@@ -542,7 +547,7 @@ def _kpi_card(kpi_df: pd.DataFrame, metric: str, label: str,
                 ),
             ]),
                 className="border-0 h-100",
-                style={"backgroundColor": "rgba(44,62,80,0.5)"}),
+                style={"backgroundColor": "var(--bg-card)"}),
             id={"type": f"{PREFIX}-kpi-card", "section": section, "index": metric},
             n_clicks=0,
             style={"cursor": "pointer", "height": "100%"},

@@ -40,6 +40,7 @@ from dash import dcc, html
 from src.config import READY_DATA_DIR
 from src.team_mapping import canonical_name
 from src.styling.theme import COLORS_DARK
+from src.styling.plotly_template import apply_chart_theme
 from src.styling.ui_components import build_unified_modal, ds_header
 from src.utils.caching import cache_get, cache_set
 from src.utils.logging import log
@@ -214,7 +215,7 @@ def _kpi_rank_figure(team_df: pd.DataFrame, league_df: pd.DataFrame,
     """
     fig = go.Figure()
     if team_df is None or team_df.empty:
-        fig.update_layout(height=40, template="plotly_dark",
+        fig.update_layout(height=40,
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           margin=dict(l=0, r=0, t=0, b=0))
         return fig
@@ -230,7 +231,7 @@ def _kpi_rank_figure(team_df: pd.DataFrame, league_df: pd.DataFrame,
 
     d = team[team[rank_col].astype(float) > 0].copy()
     if d.empty:
-        fig.update_layout(height=40, template="plotly_dark",
+        fig.update_layout(height=40,
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           margin=dict(l=0, r=0, t=0, b=0))
         return fig
@@ -260,12 +261,11 @@ def _kpi_rank_figure(team_df: pd.DataFrame, league_df: pd.DataFrame,
             "%{customdata[3]} · %{customdata[4]} pct in role<extra></extra>"
         ),
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
-        height=max(150, 24 * len(d) + 30), template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=max(150, 24 * len(d) + 30),
         margin=dict(l=4, r=10, t=4, b=20),
-        xaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.06)",
-                   showticklabels=False),
+        xaxis=dict(showgrid=True, showticklabels=False),
         yaxis=dict(automargin=True, tickfont=dict(size=10)),
     )
     return fig
@@ -302,7 +302,7 @@ def _kpi_card(team_df: pd.DataFrame, league_df: pd.DataFrame,
                 ),
             ]),
                 className="border-0 h-100",
-                style={"backgroundColor": "rgba(44,62,80,0.5)"}),
+                style={"backgroundColor": "var(--bg-card)"}),
             id={"type": f"{PREFIX}-kpi-card", "section": section, "index": metric},
             n_clicks=0,
             style={"cursor": "pointer", "height": "100%"},
@@ -342,13 +342,11 @@ def _pva_leaderboard(team_df: pd.DataFrame, metric: str) -> go.Figure:
                        "Raw season %{customdata[1]:+.2f} · %{customdata[2]:.0f} min · "
                        "%{customdata[3]}<extra></extra>"),
     ))
+    apply_chart_theme(fig, "dark")
     fig.update_layout(
-        height=max(320, 26 * len(d) + 60), template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=max(320, 26 * len(d) + 60),
         margin=dict(l=10, r=20, t=10, b=30),
-        xaxis=dict(title="PVA per 90", showgrid=True,
-                   gridcolor="rgba(255,255,255,0.06)", zeroline=True,
-                   zerolinecolor="rgba(255,255,255,0.2)"),
+        xaxis=dict(title="PVA per 90", showgrid=True, zeroline=True),
         yaxis=dict(automargin=True, tickfont=dict(size=10)),
     )
     return fig
@@ -388,14 +386,15 @@ def _squad_overview(team_df: pd.DataFrame) -> html.Div:
     d = team_df.sort_values("minutes", ascending=False)
 
     header = html.Div(
-        [html.Span("Player", style={"flex": "1", "fontSize": "0.72rem", "color": "#8899aa"})]
+        [html.Span("Player", style={"flex": "1", "fontSize": "0.72rem",
+                                    "color": "var(--text-secondary)"})]
         + [html.Span(h, style={"minWidth": w, "textAlign": "right",
-                               "fontSize": "0.72rem", "color": "#8899aa"})
+                               "fontSize": "0.72rem", "color": "var(--text-secondary)"})
            for h, w in [("Role", "4rem"), ("Apps", "3rem"), ("Starts", "3.5rem"),
                         ("Min", "4rem"), ("Min%", "3.5rem"),
                         ("Adj PVA/90", "5rem"), ("σ PVA", "4rem")]],
         style={"display": "flex", "padding": "6px 10px",
-               "borderBottom": "1px solid rgba(255,255,255,0.15)"},
+               "borderBottom": "1px solid var(--border-light)"},
     )
     rows = []
     for _, r in d.iterrows():
@@ -425,11 +424,11 @@ def _squad_overview(team_df: pd.DataFrame) -> html.Div:
                    (f"{r['pva_consistency']:.2f}", "4rem"),
                ]],
             style={"display": "flex", "padding": "6px 10px", "alignItems": "center",
-                   "borderBottom": "1px solid rgba(255,255,255,0.05)"},
+                   "borderBottom": "1px solid var(--border-light)"},
         ))
     return html.Div([header, *rows],
                     style={"maxHeight": "460px", "overflowY": "auto", "borderRadius": "6px",
-                           "border": "1px solid rgba(255,255,255,0.07)"})
+                           "border": "1px solid var(--border-light)"})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
