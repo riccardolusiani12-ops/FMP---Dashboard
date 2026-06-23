@@ -207,7 +207,41 @@ def precompute_season(season: str) -> dict[str, pd.DataFrame]:
     # newer — see precompute_season_players_if_needed().
     precompute_season_players_if_needed(season)
 
+    # ── 15. Playing Style Wheel league table (additive, isolated) ──────
+    # Depends on the offensive (step 10), pressing (step 11) and chances-
+    # conceded (step 13) summaries already written above; appended last so it
+    # can read their parquets.
+    precompute_playing_style(season)
+
     return results
+
+
+def precompute_playing_style(season: str) -> None:
+    """
+    Compute and write playing_style_league_{season}.parquet — one row per team
+    with the 12 playing-style raw KPIs and their within-season percentiles.
+
+    Additive hook: reuses the offensive / pressing / chances-conceded / shots
+    season parquets and does a single raw-CSV pass for the event-level KPIs that
+    have no precomputed home (see src.analytics.playing_style).
+    """
+    from src.analytics.playing_style import compute_league_playing_style
+
+    season_label = season.replace("_", "/")
+    print(f"\n  — Playing Style Wheel precompute: {season_label}")
+    t0 = time.time()
+
+    df = compute_league_playing_style(season)
+    if df.empty:
+        print(f"  ⚠ No playing-style data for {season_label}")
+        return
+
+    _save_parquet(
+        df,
+        READY_DATA_DIR / f"playing_style_league_{season}.parquet",
+        "Playing Style Wheel",
+    )
+    print(f"  ✓ Playing Style Wheel precompute done in {time.time()-t0:.1f}s")
 
 
 def precompute_season_players_if_needed(season: str) -> None:
