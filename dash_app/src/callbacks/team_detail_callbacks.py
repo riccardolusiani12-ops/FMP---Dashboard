@@ -764,18 +764,22 @@ def register_team_detail_callbacks(app):
             [
                 _stat_card("Goals Scored", str(gf), f"xG: {xg_val:.1f}",
                            "bi-bullseye", _GREEN,
-                           interval_button_id="td-scored-interval-open"),
+                           interval_button_id="td-scored-interval-open",
+                           league_button_id="td-goals-scored-league-open"),
                 _stat_card("Goals Conceded", str(ga), f"xGC: {xgc_val:.1f}",
                            "bi-shield-x", _RED,
-                           interval_button_id="td-conceded-interval-open"),
+                           interval_button_id="td-conceded-interval-open",
+                           league_button_id="td-goals-conceded-league-open"),
                 _stat_card("xG", f"{xg_val:.1f}",
                            f"{'↑' if xg_over >= 0 else '↓'} {abs(xg_over):.1f} vs actual",
                            "bi-graph-up-arrow",
-                           _GREEN if xg_over >= 0 else "#FFA15A"),
+                           _GREEN if xg_over >= 0 else "#FFA15A",
+                           league_button_id="td-xg-league-open"),
                 _stat_card("xGC", f"{xgc_val:.1f}",
                            f"{'↑' if xgc_over > 0 else '↓'} {abs(xgc_over):.1f} vs actual",
                            "bi-graph-down-arrow",
-                           _GREEN if xgc_over <= 0 else _RED),
+                           _GREEN if xgc_over <= 0 else _RED,
+                           league_button_id="td-xgc-league-open"),
             ],
             className="goals-xg-kpi-row",
         )
@@ -812,9 +816,11 @@ def register_team_detail_callbacks(app):
         return html.Div(
             [
                 _stat_card("Goals Scored", str(gf), "", "bi-bullseye", _GREEN,
-                           interval_button_id="td-scored-interval-open"),
+                           interval_button_id="td-scored-interval-open",
+                           league_button_id="td-goals-scored-league-open"),
                 _stat_card("Goals Conceded", str(ga), "", "bi-shield-x", _RED,
-                           interval_button_id="td-conceded-interval-open"),
+                           interval_button_id="td-conceded-interval-open",
+                           league_button_id="td-goals-conceded-league-open"),
                 html.Div(
                     [
                         html.I(className="bi bi-info-circle me-1",
@@ -834,6 +840,7 @@ def register_team_detail_callbacks(app):
     def _stat_card(
         title: str, value: str, subtitle: str, icon: str, color: str,
         interval_button_id: str | None = None,
+        league_button_id: str | None = None,
     ) -> html.Div:
         """Create a stat card for the goals/xG block."""
         text_children = [
@@ -847,6 +854,15 @@ def register_team_detail_callbacks(app):
                 html.Button(
                     [html.I(className="bi bi-clock-history me-1"), "View Breakdown"],
                     id=interval_button_id,
+                    n_clicks=0,
+                    className="kpi-interval-btn",
+                )
+            )
+        if league_button_id:
+            text_children.append(
+                html.Button(
+                    [html.I(className="bi bi-bar-chart-fill me-1"), "League Comparison"],
+                    id=league_button_id,
                     n_clicks=0,
                     className="kpi-interval-btn",
                 )
@@ -982,6 +998,202 @@ def register_team_detail_callbacks(app):
         if dist_df is None or dist_df.empty:
             return html.P("No data available.", className="text-muted")
         return _build_single_metric_card(dist_df, metric="conceded")
+
+    # ══════════════════════════════════════════════════════════
+    # GOALS & xG LEAGUE COMPARISON MODALS
+    # ══════════════════════════════════════════════════════════
+
+    def _perf_league_table(xg_df, standings_df, metric: str, highlight_team: str) -> html.Div:
+        """Build a ranked league table (# | Team | total) for Goals Scored, Goals Conceded, xG, or xGC."""
+        from src.team_mapping import canonical_name
+        from src.styling.theme import COLORS_DARK
+
+        _HL = COLORS_DARK["accent"]
+
+        if metric in ("goals_scored", "goals_conceded"):
+            if standings_df is None or standings_df.empty:
+                return html.P("No league data available.", style={"color": "#8899aa"})
+            df = standings_df.copy()
+            if metric == "goals_scored":
+                df["_val"] = df["GF"]
+                col_label = "Goals Scored"
+                ascending = False
+                fmt = "d"
+            else:
+                df["_val"] = df["GA"]
+                col_label = "Goals Conceded"
+                ascending = True
+                fmt = "d"
+        else:
+            if xg_df is None or xg_df.empty:
+                return html.P("No xG league data available.", style={"color": "#8899aa"})
+            df = xg_df.copy()
+            if metric == "xg":
+                df["_val"] = df["xG"]
+                col_label = "xG"
+                ascending = False
+                fmt = ".2f"
+            else:
+                df["_val"] = df["xGC"]
+                col_label = "xGC"
+                ascending = True
+                fmt = ".2f"
+
+        df = df.dropna(subset=["_val"]).sort_values("_val", ascending=ascending).reset_index(drop=True)
+        df["_rank"] = range(1, len(df) + 1)
+
+        hl_lower = canonical_name(highlight_team).lower()
+
+        header = html.Div(
+            [
+                html.Span("#",        style={"width": "2rem", "color": "#8899aa",
+                                              "fontSize": "0.75rem", "flexShrink": "0"}),
+                html.Span("Team",     style={"flex": "1", "color": "#8899aa",
+                                              "fontSize": "0.75rem"}),
+                html.Span(col_label,  style={"color": "#8899aa", "fontSize": "0.75rem",
+                                              "minWidth": "6rem", "textAlign": "right"}),
+            ],
+            style={"display": "flex", "padding": "6px 10px",
+                   "borderBottom": "1px solid rgba(255,255,255,0.15)", "marginBottom": "2px"},
+        )
+
+        rows = []
+        for _, row in df.iterrows():
+            team_name = str(row.get("Team", ""))
+            val = row["_val"]
+            rank = int(row["_rank"])
+            is_hl = canonical_name(team_name).lower() == hl_lower
+
+            row_style: dict = {
+                "display": "flex", "padding": "6px 10px",
+                "borderBottom": "1px solid rgba(255,255,255,0.05)",
+                "alignItems": "center",
+            }
+            if is_hl:
+                row_style.update({
+                    "background": f"{_HL}22",
+                    "borderLeft": f"3px solid {_HL}",
+                })
+
+            rows.append(
+                html.Div(
+                    [
+                        html.Span(str(rank), style={"width": "2rem", "color": "#8899aa",
+                                                     "fontSize": "0.8rem", "flexShrink": "0"}),
+                        html.Span(team_name, style={
+                            "flex": "1",
+                            "fontWeight": "700" if is_hl else "400",
+                            "color": _HL if is_hl else "var(--text-primary)",
+                            "fontSize": "0.88rem",
+                        }),
+                        html.Span(format(val, fmt), style={
+                            "fontWeight": "700" if is_hl else "400",
+                            "color": _HL if is_hl else "var(--text-secondary)",
+                            "fontSize": "0.9rem", "minWidth": "6rem", "textAlign": "right",
+                        }),
+                    ],
+                    style=row_style,
+                )
+            )
+
+        return html.Div(
+            [header, *rows],
+            style={
+                "maxHeight": "460px", "overflowY": "auto",
+                "borderRadius": "6px",
+                "border": "1px solid rgba(255,255,255,0.07)",
+            },
+        )
+
+    @app.callback(
+        Output("td-goals-scored-league-modal", "is_open"),
+        Output("td-goals-scored-league-modal-body", "children"),
+        Input("td-goals-scored-league-open", "n_clicks"),
+        State("td-goals-scored-league-modal", "is_open"),
+        State("team-season-selector", "value"),
+        State("team-context", "data"),
+        prevent_initial_call=True,
+    )
+    def toggle_goals_scored_league_modal(n_clicks, is_open, selected_season, context):
+        if not n_clicks:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        team = (context or {}).get("team", "")
+        try:
+            standings = load_standings(selected_season)
+            body = _perf_league_table(None, standings, "goals_scored", team)
+        except Exception:
+            return False, html.P("No data available.", className="text-muted")
+        return True, body
+
+    @app.callback(
+        Output("td-goals-conceded-league-modal", "is_open"),
+        Output("td-goals-conceded-league-modal-body", "children"),
+        Input("td-goals-conceded-league-open", "n_clicks"),
+        State("td-goals-conceded-league-modal", "is_open"),
+        State("team-season-selector", "value"),
+        State("team-context", "data"),
+        prevent_initial_call=True,
+    )
+    def toggle_goals_conceded_league_modal(n_clicks, is_open, selected_season, context):
+        if not n_clicks:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        team = (context or {}).get("team", "")
+        try:
+            standings = load_standings(selected_season)
+            body = _perf_league_table(None, standings, "goals_conceded", team)
+        except Exception:
+            return False, html.P("No data available.", className="text-muted")
+        return True, body
+
+    @app.callback(
+        Output("td-xg-league-modal", "is_open"),
+        Output("td-xg-league-modal-body", "children"),
+        Input("td-xg-league-open", "n_clicks"),
+        State("td-xg-league-modal", "is_open"),
+        State("team-season-selector", "value"),
+        State("team-context", "data"),
+        prevent_initial_call=True,
+    )
+    def toggle_xg_league_modal(n_clicks, is_open, selected_season, context):
+        if not n_clicks:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        team = (context or {}).get("team", "")
+        try:
+            xg_df = load_xg_summary(selected_season)
+            standings = load_standings(selected_season)
+            body = _perf_league_table(xg_df, standings, "xg", team)
+        except Exception:
+            return False, html.P("No data available.", className="text-muted")
+        return True, body
+
+    @app.callback(
+        Output("td-xgc-league-modal", "is_open"),
+        Output("td-xgc-league-modal-body", "children"),
+        Input("td-xgc-league-open", "n_clicks"),
+        State("td-xgc-league-modal", "is_open"),
+        State("team-season-selector", "value"),
+        State("team-context", "data"),
+        prevent_initial_call=True,
+    )
+    def toggle_xgc_league_modal(n_clicks, is_open, selected_season, context):
+        if not n_clicks:
+            return no_update, no_update
+        if is_open:
+            return False, no_update
+        team = (context or {}).get("team", "")
+        try:
+            xg_df = load_xg_summary(selected_season)
+            standings = load_standings(selected_season)
+            body = _perf_league_table(xg_df, standings, "xgc", team)
+        except Exception:
+            return False, html.P("No data available.", className="text-muted")
+        return True, body
 
     # ══════════════════════════════════════════════════════════
     # PLAYING STYLE WHEEL SECTION

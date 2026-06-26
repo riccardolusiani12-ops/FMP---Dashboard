@@ -158,65 +158,6 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                         className="chart-section",
                     ),
 
-                    # Section: Pressing Intensity (PPDA)
-                    html.Div(
-                        [
-                            _ds_header(
-                                "Pressing", "bi-speedometer2",
-                                "Pressing Intensity",
-                                "PPDA ranking and field tilt vs the rest of the league",
-                            ),
-                            # PPDA KPI row
-                            html.Div(
-                                id="ppda-kpi-row",
-                                className="team-kpi-row ppda-kpi-row",
-                            ),
-                            # Side-by-side charts
-                            html.Div(
-                                [
-                                    html.Div(
-                                        dcc.Loading(
-                                            dcc.Graph(
-                                                id="ppda-bar-chart",
-                                                config={
-                                                    "displayModeBar": True,
-                                                    "displaylogo": False,
-                                                    "modeBarButtonsToRemove": [
-                                                        "lasso2d", "select2d",
-                                                    ],
-                                                },
-                                                className="chart-container ppda-chart",
-                                            ),
-                                            type="circle",
-                                            color="#8a1f33",
-                                        ),
-                                        className="ppda-chart-col",
-                                    ),
-                                    html.Div(
-                                        dcc.Loading(
-                                            dcc.Graph(
-                                                id="ppda-scatter-chart",
-                                                config={
-                                                    "displayModeBar": True,
-                                                    "displaylogo": False,
-                                                    "modeBarButtonsToRemove": [
-                                                        "lasso2d", "select2d",
-                                                    ],
-                                                },
-                                                className="chart-container ppda-chart",
-                                            ),
-                                            type="circle",
-                                            color="#8a1f33",
-                                        ),
-                                        className="ppda-chart-col",
-                                    ),
-                                ],
-                                className="ppda-charts-row",
-                            ),
-                        ],
-                        className="chart-section",
-                    ),
-
                     # Section: Most-Used Formations
                     html.Div(
                         [
@@ -288,16 +229,72 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                         className="chart-section",
                     ),
 
-                    _placeholder_section(
-                        "Expected Threat (xT)",
-                        "bi-lightning-fill",
-                        "Expected Threat analysis will be available here.",
+                    # Section: Style Evolution (cross-season trend charts)
+                    dcc.Loading(
+                        html.Div(id="team-ps-evo-container"),
+                        type="circle",
+                        color="#8a1f33",
                     ),
-                    _placeholder_section(
-                        "High Regains",
-                        "bi-bullseye",
-                        "High regain analysis will be available here.",
+
+                    # Section: Pressing Intensity (PPDA)
+                    html.Div(
+                        [
+                            _ds_header(
+                                "Pressing", "bi-speedometer2",
+                                "Pressing Intensity",
+                                "PPDA ranking and field tilt vs the rest of the league",
+                            ),
+                            # PPDA KPI row
+                            html.Div(
+                                id="ppda-kpi-row",
+                                className="team-kpi-row ppda-kpi-row",
+                            ),
+                            # Side-by-side charts
+                            html.Div(
+                                [
+                                    html.Div(
+                                        dcc.Loading(
+                                            dcc.Graph(
+                                                id="ppda-bar-chart",
+                                                config={
+                                                    "displayModeBar": True,
+                                                    "displaylogo": False,
+                                                    "modeBarButtonsToRemove": [
+                                                        "lasso2d", "select2d",
+                                                    ],
+                                                },
+                                                className="chart-container ppda-chart",
+                                            ),
+                                            type="circle",
+                                            color="#8a1f33",
+                                        ),
+                                        className="ppda-chart-col",
+                                    ),
+                                    html.Div(
+                                        dcc.Loading(
+                                            dcc.Graph(
+                                                id="ppda-scatter-chart",
+                                                config={
+                                                    "displayModeBar": True,
+                                                    "displaylogo": False,
+                                                    "modeBarButtonsToRemove": [
+                                                        "lasso2d", "select2d",
+                                                    ],
+                                                },
+                                                className="chart-container ppda-chart",
+                                            ),
+                                            type="circle",
+                                            color="#8a1f33",
+                                        ),
+                                        className="ppda-chart-col",
+                                    ),
+                                ],
+                                className="ppda-charts-row",
+                            ),
+                        ],
+                        className="chart-section",
                     ),
+
                 ],
                 className="team-charts-container",
             ),
@@ -316,6 +313,35 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
                 title="Goals Conceded — 15-Minute Intervals",
                 size="lg",
             ),
+            # Performance — league comparison modals
+            build_unified_modal(
+                modal_id="td-goals-scored-league-modal",
+                title_id="td-goals-scored-league-modal-title",
+                body_id="td-goals-scored-league-modal-body",
+                title="Goals Scored — League Comparison",
+                size="lg",
+            ),
+            build_unified_modal(
+                modal_id="td-goals-conceded-league-modal",
+                title_id="td-goals-conceded-league-modal-title",
+                body_id="td-goals-conceded-league-modal-body",
+                title="Goals Conceded — League Comparison",
+                size="lg",
+            ),
+            build_unified_modal(
+                modal_id="td-xg-league-modal",
+                title_id="td-xg-league-modal-title",
+                body_id="td-xg-league-modal-body",
+                title="xG For — League Comparison",
+                size="lg",
+            ),
+            build_unified_modal(
+                modal_id="td-xgc-league-modal",
+                title_id="td-xgc-league-modal-title",
+                body_id="td-xgc-league-modal-body",
+                title="xGC Against — League Comparison",
+                size="lg",
+            ),
             # Playing Style — league comparison table
             build_unified_modal(
                 modal_id="team-ps-modal",
@@ -331,27 +357,3 @@ def layout(team_name: str = "", season: str = "") -> html.Div:
     )
 
 
-def _placeholder_section(title: str, icon: str, description: str) -> html.Div:
-    """Create a placeholder section for future KPI modules."""
-    return html.Div(
-        [
-            html.Div(
-                [
-                    html.I(className=f"bi {icon} me-2"),
-                    html.H4(title, className="section-title mb-0"),
-                ],
-                className="section-header",
-            ),
-            html.Div(
-                [
-                    html.I(
-                        className="bi bi-hourglass-split",
-                        style={"fontSize": "2rem", "opacity": 0.3},
-                    ),
-                    html.P(description, className="placeholder-text"),
-                ],
-                className="placeholder-content",
-            ),
-        ],
-        className="chart-section placeholder-section",
-    )

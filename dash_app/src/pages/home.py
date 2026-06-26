@@ -39,7 +39,7 @@ def layout() -> html.Div:
                                     html.I(className="bi bi-trophy-fill"),
                                     className="home-card-icon",
                                 ),
-                                html.H3("Team Overview - Serie A", className="home-card-title"),
+                                html.H3("Team Overview", className="home-card-title"),
                                 html.P(
                                     "Season standings, team performance, and league analytics",
                                     className="home-card-desc",

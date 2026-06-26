@@ -15,6 +15,7 @@ New IDs all have the "opp-season-" prefix to avoid collisions.
 
 from __future__ import annotations
 
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -461,8 +462,16 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_gk(trigger):
         if not trigger:
             return no_update
-        from src.components.opponent_offensive_phase import build_gk_section
-        return build_gk_section(trigger["season"], trigger["team"])
+        try:
+            from src.components.opponent_offensive_phase import build_gk_section
+            return build_gk_section(trigger["season"], trigger["team"])
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     @app.callback(
         Output("opp-section-ft", "children"),
@@ -472,8 +481,16 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_ft(trigger):
         if not trigger:
             return no_update
-        from src.components.opponent_offensive_phase import build_ft_section
-        return build_ft_section(trigger["season"], trigger["team"])
+        try:
+            from src.components.opponent_offensive_phase import build_ft_section
+            return build_ft_section(trigger["season"], trigger["team"])
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     @app.callback(
         Output("opp-section-cc", "children"),
@@ -483,8 +500,16 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_cc(trigger):
         if not trigger:
             return no_update
-        from src.components.opponent_offensive_phase import build_cc_section
-        return build_cc_section(trigger["season"], trigger["team"])
+        try:
+            from src.components.opponent_offensive_phase import build_cc_section
+            return build_cc_section(trigger["season"], trigger["team"])
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     # ── GK section: Short Pass % modal — open/close ────────────────────────
     @app.callback(
@@ -807,8 +832,16 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_dp(trigger):
         if not trigger:
             return no_update
-        from src.components.opp_season_pressing_cards import build_pressing_section
-        return build_pressing_section(trigger["season"], trigger["team"])
+        try:
+            from src.components.opp_season_pressing_cards import build_pressing_section
+            return build_pressing_section(trigger["season"], trigger["team"])
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     # ── Defensive Pressing: per-zone success modals ─────────────────────────
     # One callback per zone (high / mid / low) — matches the fixed modal IDs
@@ -993,8 +1026,16 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_dc(trigger):
         if not trigger:
             return no_update
-        from src.components.opp_season_castle_cards import build_castle_section
-        return build_castle_section(trigger["season"], trigger["team"])
+        try:
+            from src.components.opp_season_castle_cards import build_castle_section
+            return build_castle_section(trigger["season"], trigger["team"])
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     # ── Defensive Castle: KPI league-comparison modals ──────────────────────
     # Tuple: (slug, kpi_id, metric_col, ascending, fmt, share_subzone_col)
@@ -1129,8 +1170,16 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_ccc(trigger):
         if not trigger:
             return no_update
-        from src.components.opp_season_chances_conceded_cards import build_cc_conceded_section
-        return build_cc_conceded_section(trigger["season"], trigger["team"])
+        try:
+            from src.components.opp_season_chances_conceded_cards import build_cc_conceded_section
+            return build_cc_conceded_section(trigger["season"], trigger["team"])
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     # ── Chances Conceded: Clean Sheet modal ─────────────────────────────────
     @app.callback(
@@ -1339,8 +1388,16 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_player(trigger):
         if not trigger:
             return no_update
-        from src.components.opp_season_player_cards import build_player_section
-        return build_player_section(trigger["season"], trigger["team"])
+        try:
+            from src.components.opp_season_player_cards import build_player_section
+            return build_player_section(trigger["season"], trigger["team"])
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     # ── Season Player Analysis: KPI-card breakdown modal ────────────────────
     # Opens on any In/Out KPI card click; fills the shared modal with the
@@ -1387,11 +1444,19 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_trans_off(trigger, theme):
         if not trigger:
             return no_update
-        from src.components.opp_season_transitions_cards import build_transitions_section
-        return build_transitions_section(
-            trigger["season"], trigger["team"], side="offensive",
-            theme=(theme or "dark"),
-        )
+        try:
+            from src.components.opp_season_transitions_cards import build_transitions_section
+            return build_transitions_section(
+                trigger["season"], trigger["team"], side="offensive",
+                theme=(theme or "dark"),
+            )
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     @app.callback(
         Output("opp-section-trans-def", "children"),
@@ -1402,11 +1467,19 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_trans_def(trigger, theme):
         if not trigger:
             return no_update
-        from src.components.opp_season_transitions_cards import build_transitions_section
-        return build_transitions_section(
-            trigger["season"], trigger["team"], side="defensive",
-            theme=(theme or "dark"),
-        )
+        try:
+            from src.components.opp_season_transitions_cards import build_transitions_section
+            return build_transitions_section(
+                trigger["season"], trigger["team"], side="defensive",
+                theme=(theme or "dark"),
+            )
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     # ── Theme rebuild: repaint both lights maps when the theme toggles ──────
     # The lights map lives OUTSIDE .pitch-dark-container so the clientside
@@ -1539,10 +1612,18 @@ def _register_season_opponent_callbacks(app):
     def _opp_load_set_pieces(trigger, theme):
         if not trigger:
             return no_update
-        from src.components.opp_season_corner_kicks_cards import build_corner_kicks_section
-        return build_corner_kicks_section(
-            trigger["season"], trigger["team"], theme=(theme or "dark"),
-        )
+        try:
+            from src.components.opp_season_corner_kicks_cards import build_corner_kicks_section
+            return build_corner_kicks_section(
+                trigger["season"], trigger["team"], theme=(theme or "dark"),
+            )
+        except Exception as e:
+            log.error(f"[opp-season] Failed to load section: {e}\n{traceback.format_exc()}")
+            return dbc.Alert(
+                "This section could not be loaded. Please try refreshing or selecting a different team/season.",
+                color="warning",
+                className="m-3",
+            )
 
     # Theme rebuild: repaint both delivery-map lights + the delivery bar when
     # the theme toggles. Zone fills / bar text are server-drawn, so rebuild.

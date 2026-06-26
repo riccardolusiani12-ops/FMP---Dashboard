@@ -213,6 +213,9 @@ def precompute_season(season: str) -> dict[str, pd.DataFrame]:
     # can read their parquets.
     precompute_playing_style(season)
 
+    # ── 16. Goal Distribution (15-min bins) — all teams ─────────────────
+    precompute_season_goal_distribution(season)
+
     return results
 
 
@@ -242,6 +245,59 @@ def precompute_playing_style(season: str) -> None:
         "Playing Style Wheel",
     )
     print(f"  ✓ Playing Style Wheel precompute done in {time.time()-t0:.1f}s")
+
+
+def precompute_season_goal_distribution(season: str) -> None:
+    """
+    Compute and write goal_distribution_{season}.parquet — one row per team
+    per 15-minute bin (always 6 rows per team × N teams).
+
+    Additive hook: iterates all teams from the season_teams parquet and calls
+    compute_goal_distribution() for each, then concatenates and writes a single
+    parquet with columns: team, bin, scored, conceded.
+    """
+    from src.analytics.goal_distribution import compute_goal_distribution
+
+    season_label = season.replace("_", "/")
+    print(f"\n  — Goal Distribution precompute: {season_label}")
+    t0 = time.time()
+
+    teams_path = READY_DATA_DIR / f"season_teams_{season}.parquet"
+    teams_df = _read_parquet_local(teams_path)
+    if teams_df is None or teams_df.empty:
+        print(f"  ⚠ No season_teams parquet for {season_label}; skipping goal distribution")
+        return
+
+    team_col = "team" if "team" in teams_df.columns else teams_df.columns[0]
+    teams = teams_df[team_col].dropna().unique().tolist()
+
+    frames = []
+    for team in teams:
+        df = compute_goal_distribution(season, team)
+        if df is not None and not df.empty:
+            df = df.copy()
+            df.insert(0, "team", team)
+            frames.append(df)
+
+    if not frames:
+        print(f"  ⚠ No goal distribution data produced for {season_label}")
+        return
+
+    result = pd.concat(frames, ignore_index=True)
+    _save_parquet(
+        result,
+        READY_DATA_DIR / f"goal_distribution_{season}.parquet",
+        f"Goal Distribution ({len(teams)} teams)",
+    )
+    print(f"  ✓ Goal Distribution precompute done in {time.time()-t0:.1f}s")
+
+
+def _read_parquet_local(path: Path) -> pd.DataFrame | None:
+    """Read a parquet file; return None on any error."""
+    try:
+        return pd.read_parquet(path)
+    except Exception:
+        return None
 
 
 def precompute_season_players_if_needed(season: str) -> None:

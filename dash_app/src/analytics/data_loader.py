@@ -526,7 +526,6 @@ def load_goal_distribution(team: str, season: str) -> pd.DataFrame:
     Returns DataFrame with columns: bin, scored, conceded
     (always 6 rows, one per 15-minute window).
     """
-    # Try precomputed table
     parquet_path = READY_DATA_DIR / f"goal_distribution_{season}.parquet"
     df = _read_parquet(str(parquet_path))
     if df is not None and not df.empty and "team" in df.columns:
@@ -534,12 +533,7 @@ def load_goal_distribution(team: str, season: str) -> pd.DataFrame:
         if not team_df.empty:
             return team_df[["bin", "scored", "conceded"]].reset_index(drop=True)
 
-    # Fallback: compute from raw
-    log.info("Computing goal distribution for %s/%s from raw events", team, season)
-    from src.analytics.goal_distribution import compute_goal_distribution
-    result = compute_goal_distribution(season, team)
-    if result is not None:
-        return result
+    log.warning("goal_distribution parquet not found for %s; returning empty", season)
     return pd.DataFrame(columns=["bin", "scored", "conceded"])
 
 
@@ -655,4 +649,28 @@ def load_playing_style(season: str) -> Optional[pd.DataFrame]:
     processed) — the callback renders an empty-state in that case.
     """
     return _read_parquet(str(READY_DATA_DIR / f"playing_style_league_{season}.parquet"))
+
+
+def load_playing_style_all_seasons(team: str) -> Optional[pd.DataFrame]:
+    """
+    Load playing_style_league.parquet for all available seasons and return a
+    single DataFrame filtered to *team*, with one row per season and columns:
+    season, D1_pct, D2_pct, …, A3_pct.  Returns None if no data found.
+    Seasons are sorted chronologically (ascending).
+    """
+    rows = []
+    for season in AVAILABLE_SEASONS:
+        df = load_playing_style(season)
+        if df is None or df.empty:
+            continue
+        team_row = df[df["team"] == team]
+        if team_row.empty:
+            continue
+        rows.append(team_row)
+    if not rows:
+        return None
+    result = pd.concat(rows, ignore_index=True)
+    result = result.sort_values("season").reset_index(drop=True)
+    pct_cols = [c for c in result.columns if c.endswith("_pct")]
+    return result[["season"] + pct_cols]
 
