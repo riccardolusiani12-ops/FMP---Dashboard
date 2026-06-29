@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: calcio-italiano
+    runtime: python
+    buildCommand: pip install -r dash_app/requirements.txt
+    startCommand: gunicorn dash_app.app:server --workers 2 --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.0
