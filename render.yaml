@@ -1,3 +1,10 @@
+# NOTA: il servizio Render reale (https://fmp-dashboard.onrender.com) NON è
+# gestito come Blueprint da questo file, che quindi Render non legge. Le
+# impostazioni valide sono quelle nel pannello di Render (Settings/Environment):
+#   - Root Directory: vuota (build dalla root del repo)
+#   - Build/Start command equivalenti a quelli qui sotto
+#   - PYTHON_VERSION=3.13.5 (fissata anche da .python-version nella root)
+# Il file resta come riferimento, o per ricreare il servizio come Blueprint.
 services:
   - type: web
     name: calcio-italiano

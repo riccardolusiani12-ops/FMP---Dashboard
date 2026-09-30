@@ -9,6 +9,43 @@ API PerformFeeds ──► JSON ──► CSV ──► data/raw/serie_a_<stagio
 La pipeline ristruttura gli script originali della cartella `selenium wire` senza modificarli.
 La logica di parsing e conversione è la stessa: `convert.py` produce CSV identici byte per byte a quelli già presenti.
 
+## Riepilogo operativo
+
+- **App pubblicata:** https://fmp-dashboard.onrender.com
+  - Render fa auto-deploy a ogni push su `main`. Le impostazioni valide sono nel pannello Render, perché `render.yaml` non viene letto.
+  - Python 3.13.5 è fissato da `PYTHON_VERSION` e da `.python-version` nella root.
+  - Sul piano Free il servizio va in stop dopo un periodo di inattività: la prima richiesta può impiegare circa 50 s.
+- **Run automatici:** ogni **martedì alle 09:00** (LaunchAgent `com.ricki.calcioitaliano.weekly`).
+  - Se il Mac era in stop, il run parte al risveglio.
+  - Se era spento, parte al login, ma solo se il controllo della settimana non è ancora stato fatto (`--catch-up`).
+  - Stato: `launchctl print gui/$(id -u)/com.ricki.calcioitaliano.weekly`.
+- **Notifiche** (titolo "Calcio Italiano"):
+  - ✅ partite caricate e pubblicate;
+  - ℹ️ nessuna nuova partita;
+  - ❌ errore;
+  - con "⚠️ … ripiego browser" se l'API non era disponibile.
+- **Stato stagione 2026/27 al 30/09/2026:** GW1–5 (50 partite) caricate.
+
+### Cosa fare se arriva una notifica ❌
+
+La notifica indica il passo e il motivo; il sottotitolo è il nome del log in `pipeline/logs/run_<data>_<ora>.log`. Tra i passi 7 e 9 la pipeline ha già ripristinato lo stato precedente. Al passo 10, invece, un commit fatto e poi fallito nel push resta in locale.
+
+1. **Apri il log** e cerca la riga `❌ Errore al passo …` e, nel caso del precompute o di pytest, le righe `│` che la precedono.
+2. **Diagnosi per passo:**
+
+   | Passo | Causa tipica | Cosa fare |
+   |---|---|---|
+   | 0 | Branch diverso da `main`, file in staging, modifiche non committate in `data/ready`, `data/processed` o `xg_model.pkl` | Sistema lo stato di git (`git status`), poi rilancia |
+   | 1, 4 | Rete assente o API PerformFeeds giù (e ripiego fallito) | Riprova più tardi; se persiste, prova l'API a mano (sezione "Aggiungere una stagione") |
+   | 5, 6 | Formato Opta cambiato, squadra sconosciuta (neopromossa), colonne diverse | Leggi il dettaglio; per una squadra nuova aggiorna `team_mapping.py` (vedi sotto) |
+   | 8 | Errore nel precompute, parquet non rigenerati | Guarda il traceback nel log; lancia a mano `cd dash_app && .venv/bin/python -m src.analytics.precompute_serie_a <stagione>` |
+   | 9 | Test falliti | `cd dash_app && .venv/bin/python -m pytest -q` per vedere quali |
+   | 10 | "commit non riuscito" | Controlla `git status` |
+   | 10 | "push fallito, commit locale in sospeso" | Di solito sono credenziali GitHub scadute nel Portachiavi: fai un `git push` a mano da terminale. Altrimenti il run successivo ritenta da solo |
+
+3. **Rilancia a mano** dalla root del repo: `dash_app/.venv/bin/python pipeline/run_weekly.py --dry-run`, poi senza opzioni.
+4. **Controlla l'app** su https://fmp-dashboard.onrender.com una volta completato il deploy.
+
 ## Moduli
 
 | File | Ruolo | Origine |
