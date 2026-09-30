@@ -25,7 +25,7 @@ pyarrow==22.0.0
 # Installing into a different conda env / venv does nothing for the running app.
 # Pinned to the version the dashboard is validated against; the pickle carries no
 # embedded sklearn version, so a different major version could break unpickling
-# (validated working under both Python 3.11 and 3.14 with scikit-learn 1.7.2).
+# (validated working under Python 3.13 with scikit-learn 1.7.2).
 scikit-learn==1.7.2
 kaleido==1.2.0
 gunicorn==23.0.0
