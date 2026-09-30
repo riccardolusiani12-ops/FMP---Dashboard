@@ -29,3 +29,14 @@ pyarrow==22.0.0
 scikit-learn==1.7.2
 kaleido==1.2.0
 gunicorn==23.0.0
+
+# lightgbm is OPTIONAL — only needed to retrain the PV model
+# (src/analytics/possession_value.py:762, src/utils/pv_model.py). It is
+# imported lazily inside functions, never at module load, so the app runs
+# fine without it; only offline PV model training requires it.
+# lightgbm==4.7.0
+
+# matplotlib is OPTIONAL — only used by two offline scripts, never imported
+# by the running app: src/models/train_pv_model.py and
+# src/models/generate_pv_heatmap.py (PV model training/diagnostics plots).
+# matplotlib==3.11.2
