@@ -138,3 +138,32 @@ Eseguita il 2026-09-30 a partire dal tag `pre-phase2a-deps-2026-09-30`, in rispo
 ### Follow-up aperti
 - I 2 `FutureWarning` su `pd.concat` con entry NA in `test_chance_creation.py` (righe 1146, 1200) restano da correggere in un futuro passaggio a pandas 3.
 - I 2 `PerformanceWarning: DataFrame is highly fragmented` osservati sotto pandas 3.0.1 (`defensive_structure.py:1033`, `final_third.py:1273`) sono solo rilevanti se/quando si deciderà di migrare a pandas 3.
+
+---
+
+## Fase 2b — Bordo area (visivo)
+
+Eseguita il 2026-09-30 a partire dal tag `pre-phase2b-box-visual-2026-09-30`, in risposta al punto 8 sopra (bordo area disegnato a 83.5 invece del valore canonico Opta-normalizzato 83.33 usato dallo strato analitico).
+
+### Inventario e classificazione
+- `grep -rn "83\.5" dash_app/src/`: 8 occorrenze DISEGNO (`fig.add_shape(type="rect", ...)` in 7 file `components/` + `pitch_utils.py:130`), 1 ALTRO (commento in `pitch_utils.py:55`, già descrive la correzione), 1 ANALITICA fuori scope (`defensive_structure.py:104`, `OPP_BOX_X_MIN`, non toccata).
+- Area speculare: ogni punto con `x0=83.5` aveva anche il rettangolo sinistro a `x0=0, x1=16.5` nello stesso file — sostituito con `16.67` per coerenza (100 − 83.33), come da conferma.
+- Durante l'implementazione sono emerse 2 occorrenze aggiuntive di `16.5` non catturate dal grep iniziale (limitato a `83.5`): `final_third_cards.py:347` (`pa_w = 16.5`, larghezza box su un pitch con `PW=100.0`, stesso sistema di coordinate) e `chance_conceded_cards.py:505` (dentro `_draw_defensive_half()`, box sinistro con `y0=21.1/y1=78.9` già canonici ma `x1=16.5` non allineato). Entrambe corrette per coerenza; il lato destro di `final_third_cards.py` usa la formula `PW-pa_w`, quindi si è auto-corretto.
+- Costante canonica: `pitch_utils.py` definisce già `_PENALTY_BOX_X0=83.33`/`_OWN_BOX_X1=16.67` (righe 59-64), ma sono private al modulo e usate solo da `draw_pitch()`; nessun componente le importava. Scelta implementativa confermata: (a) sostituzione diretta del letterale, non (b) import della costante — evita di rendere pubblica un'API privata per un fix puramente visivo.
+
+### File modificati (commit `cd3b775`, `style(pitch): align penalty box drawing to canonical 83.33`)
+1. `dash_app/src/components/chance_conceded_cards.py` — commento coordinate + 2 shape (`_section_origin_grid`, `_draw_defensive_half`)
+2. `dash_app/src/components/chance_creation_cards.py` — 2 shape (`_section_origin_grid`)
+3. `dash_app/src/components/final_third_cards.py` — `pa_w` in `_possession_pitch_figure`
+4. `dash_app/src/components/opp_season_chances_conceded_cards.py` — 2 shape (`_build_zone_pitch`)
+5. `dash_app/src/components/opponent_offensive_phase.py` — 6 shape (`_build_gk_zone_pitch`, `_build_ft_zone_pitch`, `build_cc_section`)
+6. `dash_app/src/components/pitch_zones.py` — 2 shape (`pitch_zone_figure`)
+7. `dash_app/src/styling/pitch_utils.py` — 2 shape (`_draw_formation_markings`)
+
+### Verifica
+- `grep -rn "83\.5" dash_app/src/` → solo il commento `pitch_utils.py:55` e `defensive_structure.py:104` (ANALITICA, intatta), come atteso.
+- `git diff --stat pre-phase2b-box-visual-2026-09-30 -- dash_app/src/analytics/` → vuoto.
+- `pytest -q` → 118/118 verdi (stessi 2 `FutureWarning` già noti, nessun nuovo warning).
+- Verifica figure reali: generate `chance_creation_card()` e `chance_conceded_card()` con l'output di `analyse_chance_creation()`/`analyse_chance_conceded()` su Bologna–Roma (giornata 34, 2025/26, ultima con CSV raw reale), più `pitch_zones.pitch_zone_figure()` e `pitch_utils.draw_pitch(style="formation")` invocate direttamente. In tutte le figure ispezionate, i rettangoli area risultano `x0=83.33`/`x1=16.67` (nessun `83.5`/`16.5` residuo); numero di shape e tracce coerente con l'atteso per ciascun grafico (nessuna shape aggiunta/rimossa dalla modifica).
+- Smoke test app: avvio pulito su porta 8050, cache 5 stagioni scaldata, nessun errore/warning nuovo; arrestata correttamente.
+- Nessun push eseguito.
