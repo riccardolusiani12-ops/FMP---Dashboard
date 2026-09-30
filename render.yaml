@@ -6,4 +6,4 @@ services:
     startCommand: gunicorn dash_app.app:server --workers 2 --timeout 120
     envVars:
       - key: PYTHON_VERSION
-        value: 3.14.0
+        value: 3.13.5
