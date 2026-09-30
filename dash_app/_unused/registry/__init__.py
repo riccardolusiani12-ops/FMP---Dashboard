@@ -1,1 +1,0 @@
-# Registry sub-package
