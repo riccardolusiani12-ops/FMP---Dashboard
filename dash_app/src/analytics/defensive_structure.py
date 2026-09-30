@@ -95,13 +95,15 @@ DEFENSIVE_LOSS_TYPE_IDS: frozenset[int] = frozenset({5, 44, 45, 52})
 
 # Dangerous area boundaries (Team B raw x/y) for N2 outcome classification
 # Z14 equivalent  : Team B raw x ≥ OPP_CENTRAL_X_MIN AND y in central band
-# Inside box      : Team B raw x ≥ OPP_BOX_X_MIN AND y ∈ [OPP_BOX_Y_MIN, OPP_BOX_Y_MAX]
+# Inside box      : Team B raw x ≥ BOX_X AND y ∈ [OPP_BOX_Y_MIN, OPP_BOX_Y_MAX]
 # Deep flank      : Team B raw x ≥ OPP_DEEP_ATT_X_MIN (any corridor) —
 #                   covers dangerous wide positions before the box that are
 #                   not captured by the central-channel or box checks.
+# NOTE: OPP_CENTRAL_X_MIN and OPP_DEEP_ATT_X_MIN are documented above but not
+# read by any classification logic in this module (verified via grep — Fase
+# 2c sanity-check audit); left in place as documentation-only constants.
 OPP_CENTRAL_X_MIN:   float = 66.67
 OPP_DEEP_ATT_X_MIN:  float = 75.0   # deep attacking third (any corridor → N2)
-OPP_BOX_X_MIN:       float = 83.5
 OPP_BOX_Y_MIN:       float = 21.0
 OPP_BOX_Y_MAX:       float = 79.0
 CENTRAL_Y_MIN:       float = 33.33
