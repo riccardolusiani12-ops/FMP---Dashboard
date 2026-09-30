@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Copia di riferimento del LaunchAgent della pipeline settimanale.
+  Installazione: vedi pipeline/README.md, sezione "Pianificazione settimanale".
+
+  - StartCalendarInterval: ogni martedì (Weekday 2) alle 09:00. Se a quell'ora
+    il Mac è in stop, launchd avvia il job al risveglio (più scadenze perse
+    vengono fuse in una sola). Se il Mac è spento, la scadenza va persa.
+  - RunAtLoad + catch-up: al login (caricamento dell'agente) la pipeline
+    controlla se il run dell'ultimo martedì 09:00 è già stato fatto; se sì
+    termina subito con la notifica "nessuna nuova partita", altrimenti recupera.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ricki.calcioitaliano.weekly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ricki/Local Projects/FMP_SerieA_Dashboard/dash_app/.venv/bin/python</string>
+        <string>/Users/ricki/Local Projects/FMP_SerieA_Dashboard/pipeline/run_weekly.py</string>
+        <string>--wait-network</string>
+        <string>--catch-up</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ricki/Local Projects/FMP_SerieA_Dashboard</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>2</integer>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ricki/Local Projects/FMP_SerieA_Dashboard/pipeline/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ricki/Local Projects/FMP_SerieA_Dashboard/pipeline/logs/launchd.err.log</string>
+</dict>
+</plist>

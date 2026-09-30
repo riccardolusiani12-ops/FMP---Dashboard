@@ -1,0 +1,13 @@
+# Dipendenze della pipeline dati (solo locale, NON usate da Render).
+# Si installano nello stesso venv della dash:
+#   dash_app/.venv/bin/python -m pip install -r pipeline/requirements.txt
+# pandas è già fornito da dash_app/requirements.txt.
+
+# Metodo principale (API PerformFeeds)
+requests>=2.32
+
+# Ripieghi con browser (Chrome headless). NB: non usare selenium-wire,
+# incompatibile con blinker>=1.8 richiesto da Flask/Dash.
+selenium>=4.25
+beautifulsoup4>=4.12
+lxml>=5.0

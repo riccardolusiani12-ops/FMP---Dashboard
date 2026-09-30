@@ -1,0 +1,38 @@
+# Pipeline dati settimanale — configurazione stagioni.
+#
+# Nessun ID è cablato nel codice: tutto quello che cambia da una stagione
+# all'altra vive qui. Per aggiungere una stagione vedi pipeline/README.md.
+#
+# Percorsi relativi alla root del repo.
+
+[defaults]
+# Stagione elaborata da run_weekly.py quando non si passa --season.
+current_season = "2026_2027"
+
+# Chiave "outlet" PerformFeeds: è il segmento dopo /matchevent/ nelle chiamate
+# del widget Scoresway (negli script originali chiamata COMPETITION_ID).
+# È la stessa per tutte le stagioni.
+outlet_key = "ft1tiv1inq7v1sk3y9tv12yh5"
+
+# ID Opta della competizione Serie A (matchInfo.competition.id).
+competition_id = "1r097lpxe0xn03ihb7wi98kao"
+
+# Cartella di lavoro gitignorata: JSON, CSV intermedi ed elenco partite.
+work_dir = "pipeline/_work"
+
+# Metodo PRINCIPALE, sempre: API PerformFeeds (elenco partite con
+# soccerdata/match?tmcl=..., download con soccerdata/matchevent). Il browser
+# (Selenium 4) entra in gioco SOLO come ripiego quando l'API fallisce, e in quel
+# caso la notifica finale lo segnala ("⚠️ ... usato ripiego browser").
+# Scoresway risponde "Access Denied" (403) a Chrome headless: con false il
+# ripiego apre una finestra di Chrome visibile, come negli script originali
+# 2 e 3 (verificato 2026-09-30).
+browser_headless = false
+
+[seasons.2026_2027]
+label = "2026/27"
+# matchInfo.tournamentCalendar.id — dall'API soccerdata/tournamentcalendar.
+tournament_calendar_id = "60cryos85i4bp5ul34tt0brx0"
+results_url = "https://www.scoresway.com/en_GB/soccer/serie-a-2026-2027/60cryos85i4bp5ul34tt0brx0/results"
+# Cartella raw letta dalla dash (formato nome file: <week>_<Home>_<Away>_<match_id>.csv).
+raw_events_dir = "data/raw/serie_a_2026_2027/events"

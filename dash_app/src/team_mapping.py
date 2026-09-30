@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from src.config import LOGOS_DIR, RAW_DATA_DIR
+from src.config import LOGOS_DIR, RAW_DATA_DIR, READY_DATA_DIR
 
 
 # ── Master team registry ─────────────────────────────────────────────────────
@@ -143,7 +143,8 @@ def teams_for_season(season: str) -> list[str]:
     """
     events_dir = RAW_DATA_DIR / f"serie_a_{season}" / "events"
     if not events_dir.exists():
-        return []
+        # Git-based deploy (Render): no raw CSVs → precomputed team list.
+        return _teams_from_ready(season)
 
     teams: set[str] = set()
     for csv_file in events_dir.glob("*.csv"):
@@ -155,6 +156,17 @@ def teams_for_season(season: str) -> list[str]:
             teams.add(canonical_name(away))
 
     return sorted(teams)
+
+
+def _teams_from_ready(season: str) -> list[str]:
+    """Canonical team names from data/ready/season_teams_<season>.parquet."""
+    path = READY_DATA_DIR / f"season_teams_{season}.parquet"
+    if not path.exists():
+        return []
+    import pandas as pd
+
+    teams = pd.read_parquet(path, columns=["Team"])["Team"].dropna().astype(str)
+    return sorted({canonical_name(t) for t in teams})
 
 
 def team_slug(team: str) -> str:

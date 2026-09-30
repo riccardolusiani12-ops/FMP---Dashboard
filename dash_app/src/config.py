@@ -3,6 +3,7 @@ Calcio Italiano — Application-wide configuration.
 All paths are relative to the project root (dash_app/).
 """
 
+import re
 from pathlib import Path
 from typing import Final
 
@@ -40,13 +41,29 @@ DEFAULT_COMPETITION: Final[str] = "Serie A"
 CACHE_TTL: Final[int] = 3600  # seconds — 1 hour
 
 # ── Available seasons (folder names under data/raw/) ──────────────────────────
-AVAILABLE_SEASONS: list[str] = sorted(
-    [
+def discover_seasons(raw_dir: Path, ready_dir: Path) -> list[str]:
+    """
+    Season keys ("2025_2026"), chronological.
+
+    Locally they come from the raw folders data/raw/serie_a_*. On a git-based
+    deploy (Render) data/raw/ is not versioned, so fall back to the seasons that
+    have a precomputed standings_<season>.parquet in data/ready/.
+    """
+    raw = sorted(
         d.name.replace("serie_a_", "")
-        for d in RAW_DATA_DIR.glob("serie_a_*")
+        for d in raw_dir.glob("serie_a_*")
         if d.is_dir()
-    ]
-)
+    )
+    if raw:
+        return raw
+    return sorted(
+        p.stem.replace("standings_", "")
+        for p in ready_dir.glob("standings_*.parquet")
+        if re.fullmatch(r"\d{4}_\d{4}", p.stem.replace("standings_", ""))
+    )
+
+
+AVAILABLE_SEASONS: list[str] = discover_seasons(RAW_DATA_DIR, READY_DATA_DIR)
 
 # ── UI constants ──────────────────────────────────────────────────────────────
 APP_TITLE: Final[str] = "Calcio Italiano"

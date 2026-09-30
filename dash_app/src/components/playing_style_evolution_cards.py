@@ -4,8 +4,8 @@ dash_app/src/components/playing_style_evolution_cards.py
 Style Evolution section for the Team Overview page.
 
 12 small-multiple area+line charts — one per playing-style KPI — each showing
-the selected team's within-Serie-A percentile rank for that KPI across all 5
-available seasons (2021/22 through 2025/26). Placed immediately below the
+the selected team's within-Serie-A percentile rank for that KPI across all
+available seasons. Placed immediately below the
 Playing Style Wheel section.
 
 Phase colours are imported from playing_style_cards — do not redefine them.
@@ -226,7 +226,7 @@ def style_evolution_card(team: str, df_all: pd.DataFrame,
             ),
             html.H4("Style Evolution", className="ds-title"),
             html.P(
-                "Percentile rank per season across all five Serie A seasons — "
+                "Percentile rank per season across all available Serie A seasons — "
                 "within-league comparison",
                 className="ds-sub",
             ),

@@ -45,3 +45,10 @@ data/*
 !data/ready/*.parquet
 !data/processed/
 !data/processed/*.parquet
+
+# ── Pipeline dati settimanale (pipeline/) ────────────────────────────────────
+# JSON e CSV intermedi e log restano locali; i transformer Opta invece sono
+# parte del codice della pipeline e vanno versionati.
+pipeline/_work/
+pipeline/logs/
+!pipeline/opta_lookups/*.csv
