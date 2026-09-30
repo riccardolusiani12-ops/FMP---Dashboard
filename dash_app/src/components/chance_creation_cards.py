@@ -292,11 +292,15 @@ def _mini_kpi(label: str, value, subtitle: str, color: str, icon: str) -> html.D
 # A. SHOT OVERVIEW KPIs
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _section_shot_overview(sm: dict, matrix: dict) -> html.Div:
+def _section_shot_overview(sm: dict, matrix: dict, own_goals: int = 0) -> html.Div:
     """Top-level shot volume and xG overview KPIs."""
     total_xg = matrix.get("TOTAL", {}).get("xG", 0.0)
     total_sot_pct = matrix.get("TOTAL", {}).get("SoT%", 0.0)
     total_gs = matrix.get("TOTAL", {}).get("GS", 0)
+
+    goals_subtitle = f"SoT%: {total_sot_pct:.1f}%"
+    if own_goals > 0:
+        goals_subtitle += f" · incl. {own_goals} OG"
 
     return html.Div(
         [
@@ -330,7 +334,7 @@ def _section_shot_overview(sm: dict, matrix: dict) -> html.Div:
                     ),
                     _mini_kpi(
                         "Goals", total_gs,
-                        f"SoT%: {total_sot_pct:.1f}%",
+                        goals_subtitle,
                         "#22c55e", "bi-trophy-fill",
                     ),
                 ],
@@ -732,8 +736,12 @@ def _section_shot_map(shots_detail: list) -> html.Div:
 
     fig = go.Figure()
 
+    # Own goals use the goal colour but a distinct symbol (diamond-open)
+    _OG_COLOR = SEMANTIC_COLORS["tier_converted"]  # same green as goals
+
     for origin in ORIGIN_LABELS:
-        origin_shots = [s for s in shots_detail if s["origin"] == origin]
+        origin_shots = [s for s in shots_detail
+                        if s["origin"] == origin and not s.get("is_own_goal", False)]
         if not origin_shots:
             continue
 
@@ -784,6 +792,32 @@ def _section_shot_map(shots_detail: list) -> html.Div:
                 hoverinfo="text",
             ))
 
+    # ── Own goal markers ──────────────────────────────────────────────────────
+    og_shots = [s for s in shots_detail if s.get("is_own_goal", False)]
+    if og_shots:
+        og_xs = [s["x"] for s in og_shots]
+        og_ys = [s["y"] for s in og_shots]
+        og_texts = [
+            f"OG — {s['player']}<br>{s['minute']}' (opponent own goal)"
+            for s in og_shots
+        ]
+        fig.add_trace(go.Scatter(
+            x=og_xs, y=og_ys,
+            mode="markers+text",
+            marker=dict(
+                size=14,
+                color="rgba(0,0,0,0)",          # transparent fill
+                symbol="diamond",
+                line=dict(color=_OG_COLOR, width=2.5),
+            ),
+            text=["OG"] * len(og_shots),
+            textposition="top center",
+            textfont=dict(size=9, color=_OG_COLOR),
+            name="Own Goal",
+            customdata=og_texts,
+            hovertemplate="%{customdata}<extra></extra>",
+        ))
+
     _draw_half_pitch(fig)
 
     apply_chart_theme(fig, "dark")
@@ -810,11 +844,15 @@ def _section_shot_map(shots_detail: list) -> html.Div:
         ),
     )
 
+    has_og = bool(og_shots)
+    legend_note = "⭐ = goal · ◇ OG = own goal · circle = shot · colour = attack origin" if has_og \
+        else "⭐ = goal · circle = shot · colour = attack origin"
+
     return html.Div(
         [
             html.H6("Shot Map", className="buildup-subsection-title"),
             html.Div(
-                "⭐ = goal · circle = shot · colour = attack origin",
+                legend_note,
                 style={
                     "fontSize": "0.75rem",
                     "color": "var(--text-muted)",
@@ -1129,6 +1167,7 @@ def chance_creation_card(data: dict) -> html.Div:
     sm = data.get("shot_metrics", {})
     tiers = data.get("shot_quality_tiers", {})
     shots = data.get("shots_detail", [])
+    own_goals = data.get("own_goals", 0)
 
     _header = ds_header(
         "Offensive Phase — Chance Creation", "bi-bullseye",
@@ -1155,7 +1194,7 @@ def chance_creation_card(data: dict) -> html.Div:
     sections = [
         _header,
         # 1 — Shot overview KPIs
-        _section_shot_overview(sm, matrix),
+        _section_shot_overview(sm, matrix, own_goals=own_goals),
         sep,
         # 2 — Attack origin breakdown
         _section_origin_breakdown(shots),

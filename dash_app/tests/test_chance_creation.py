@@ -1112,6 +1112,105 @@ class TestChanceCreationAnalyzer:
         assert 0 <= metrics["pct_in_box"] <= 100
         assert 0 <= metrics["sot_pct_total"] <= 100
 
+    def test_own_goal_credited_to_analysed_team(self):
+        """Opponent own goal (type_id=16, own goal='Si') is credited to the
+        analysed team: goals=3, own_goals=1, TOTAL GS=3."""
+        model = _make_pv_model_with_known_grid()
+        analyzer = ChanceCreationAnalyzer(model)
+
+        # Base match: Test FC has 1 saved shot + 1 goal from corner (from _make_mini_match)
+        df = self._make_mini_match().copy()
+
+        # Add an opponent own goal (Opta pattern: type_id=16, own goal='Si',
+        # recorded under the opponent's team_name)
+        og_row = {
+            "event_id": 999, "event": "Goal", "type_id": 16,
+            "period_id": 1, "time_min": 60, "time_sec": 0,
+            "contestant_id": "t2", "team_name": "Opponent FC",
+            "player_name": "Opp Defender",
+            "x": 10.0, "y": 50.0,  # in opponent's frame → flips to ~90 in ours
+            "outcome": 1,
+            "Pass End X": None, "Pass End Y": None,
+            "Through ball": None, "Cross": None,
+            "Long ball": None, "Corner taken": None,
+            "Free kick taken": None, "Throw In": None,
+            "Penalty": None, "Goal Kick": None,
+            "Gk kick from hands": None,
+            "Head": None, "Right footed": None,
+            "Volley": None, "Big Chance": None,
+            "1 on 1": None, "Fast break": None,
+            "From corner": None, "Set piece": None,
+            "Free kick": None, "Individual Play": None,
+            "own goal": "Si", "Related event ID": None,
+        }
+        df = pd.concat([df, pd.DataFrame([og_row])], ignore_index=True)
+
+        result = analyzer.analyze(df, "Test FC")
+
+        # own_goals key must exist and equal 1
+        assert result.get("own_goals", -1) == 1, f"own_goals={result.get('own_goals')}"
+        # total goals = 1 regular (corner) + 1 OG = 2
+        assert result["goals"] == 2, f"goals={result['goals']}"
+        assert result["chain_to_goal_matrix"]["TOTAL"]["GS"] == 2
+
+        # OG entry in shots_detail
+        og_entries = [s for s in result["shots_detail"] if s.get("is_own_goal")]
+        assert len(og_entries) == 1
+        og = og_entries[0]
+        assert og["origin"] == "Own Goal"
+        assert og["xG"] == 0.0
+        assert og["quality_tier"] == 3
+        assert og["is_goal"] is True
+        assert og["on_target"] is True
+        # x should be flipped: 100 - 10 = 90
+        assert og["x"] == 90.0
+
+    def test_own_goal_not_present_gives_zero_own_goals(self):
+        """Match with no own goals: own_goals=0, is_own_goal=False for all shots."""
+        model = _make_pv_model_with_known_grid()
+        analyzer = ChanceCreationAnalyzer(model)
+        df = self._make_mini_match()
+        result = analyzer.analyze(df, "Test FC")
+
+        assert result.get("own_goals", -1) == 0
+        assert all(not s.get("is_own_goal", False) for s in result["shots_detail"])
+        assert all("is_own_goal" in s for s in result["shots_detail"])
+
+    def test_own_goal_not_in_regular_origin_matrix(self):
+        """Own goal shots appear in TOTAL GS but not in any named origin column."""
+        model = _make_pv_model_with_known_grid()
+        analyzer = ChanceCreationAnalyzer(model)
+        df = self._make_mini_match().copy()
+
+        og_row = {
+            "event_id": 999, "event": "Goal", "type_id": 16,
+            "period_id": 1, "time_min": 60, "time_sec": 0,
+            "contestant_id": "t2", "team_name": "Opponent FC",
+            "player_name": "Opp Defender",
+            "x": 10.0, "y": 50.0, "outcome": 1,
+            "Pass End X": None, "Pass End Y": None,
+            "Through ball": None, "Cross": None, "Long ball": None,
+            "Corner taken": None, "Free kick taken": None, "Throw In": None,
+            "Penalty": None, "Goal Kick": None, "Gk kick from hands": None,
+            "Head": None, "Right footed": None, "Volley": None,
+            "Big Chance": None, "1 on 1": None, "Fast break": None,
+            "From corner": None, "Set piece": None, "Free kick": None,
+            "Individual Play": None, "own goal": "Si", "Related event ID": None,
+        }
+        df = pd.concat([df, pd.DataFrame([og_row])], ignore_index=True)
+
+        result = analyzer.analyze(df, "Test FC")
+        matrix = result["chain_to_goal_matrix"]
+
+        from src.analytics.chance_creation import ORIGIN_LABELS
+        named_gs = sum(matrix.get(o, {}).get("GS", 0) for o in ORIGIN_LABELS)
+        total_gs = matrix["TOTAL"]["GS"]
+
+        # named origins do not include OG goals; TOTAL does
+        assert total_gs > named_gs, (
+            f"TOTAL GS ({total_gs}) should exceed sum of named origins ({named_gs})"
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHOT METRICS COMPUTATION (UNIT)

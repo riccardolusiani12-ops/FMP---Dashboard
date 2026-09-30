@@ -1045,13 +1045,15 @@ class ChanceCreationAnalyzer:
             match_df, team, pv_model=self.pv_model,
         )
 
-        log.info("Chance creation for %s: %d shots, %d goals, "
+        n_goals = sum(1 for s in shots_detail if s["is_goal"])
+        n_own_goals = sum(1 for s in shots_detail if s.get("is_own_goal", False))
+
+        log.info("Chance creation for %s: %d shots, %d goals (%d OG), "
                  "total xG=%.2f, origins=%s, high_regains=%d",
-                 team, len(shots_detail),
-                 sum(1 for s in shots_detail if s["is_goal"]),
+                 team, len(shots_detail), n_goals, n_own_goals,
                  sum(s["xG"] for s in shots_detail),
                  {o: sum(1 for s in shots_detail if s["origin"] == o)
-                  for o in ORIGIN_LABELS},
+                  for o in ORIGIN_LABELS + ["Own Goal"]},
                  hr_kpis.get("total_high_regains", 0))
 
         return {
@@ -1059,6 +1061,9 @@ class ChanceCreationAnalyzer:
             "shot_metrics": shot_metrics,
             "shot_quality_tiers": quality_tiers,
             "shots_detail": shots_detail,
+            "goals": n_goals,
+            "shots": len(shots_detail),
+            "own_goals": n_own_goals,
             "high_regain_kpis": hr_kpis,
         }
 
@@ -1119,7 +1124,11 @@ class ChanceCreationAnalyzer:
             lambda t: canonical_name(str(t).strip()).lower() == team_lower
             if pd.notna(t) else False
         )
-        # Exclude own goals (column "own goal" == "Si" / non-null)
+
+        # Own-goal mask: "own goal" == "Si" on the opponent's row.
+        # These are credited to *our* team even though they carry the opponent's
+        # team_name, so they are identified separately and added as synthetic
+        # own-goal entries rather than being excluded.
         if "own goal" in df.columns:
             og_mask = df["own goal"].apply(
                 lambda v: str(v).strip().lower() in ("si", "yes", "1", "true")
@@ -1127,88 +1136,159 @@ class ChanceCreationAnalyzer:
             )
         else:
             og_mask = pd.Series(False, index=df.index)
+
+        # Own-goal rows credited to the analysed team: they are type_id=16
+        # (Goal) on the opponent's possession, with "own goal" = "Si".
+        # The opponent's x/y coordinates are in the opponent's coordinate frame,
+        # so we flip them to get the attacking team's perspective.
+        opp_mask = df["team_name"].apply(
+            lambda t: canonical_name(str(t).strip()).lower() != team_lower
+            if pd.notna(t) else True
+        )
+        own_goal_rows = df[shot_mask & opp_mask & og_mask]
+
+        # Regular shots for the team (own goals on the team's own row excluded —
+        # this handles rare data where Opta records the OG on the scoring team's
+        # side with own_goal="Si"; in practice OG rows are always on the opponent).
         team_shots = df[shot_mask & team_mask & ~og_mask]
 
+        # ── Process regular shots ─────────────────────────────────────────────
         for idx in team_shots.index:
             shot_row = df.loc[idx]
-            poss_id = shot_row.get("poss_id")
-            if pd.isna(poss_id):
-                log.warning("Shot at idx %d has no possession ID — skipping", idx)
-                continue
+            detail = self._build_shot_detail(shot_row, df, idx, is_own_goal=False)
+            if detail is not None:
+                shots_detail.append(detail)
 
-            # Get possession events
-            poss_events = df[df["poss_id"] == poss_id].copy()
+        # ── Process own-goal rows ─────────────────────────────────────────────
+        for idx in own_goal_rows.index:
+            shot_row = df.loc[idx]
+            detail = self._build_own_goal_detail(shot_row, idx)
+            if detail is not None:
+                shots_detail.append(detail)
+                log.debug(
+                    "Own goal at idx %d (min %d'%d\"): credited to %s",
+                    idx,
+                    int(shot_row.get("minute", 0) or 0),
+                    int(shot_row.get("second", 0) or 0),
+                    team_lower,
+                )
 
-            # Possession metadata
-            poss_origin = poss_events["poss_origin"].iloc[0] if "poss_origin" in poss_events.columns else "open_play"
-            poss_start_sec = poss_events["_match_sec"].iloc[0] if not poss_events.empty else 0.0
-
-            # Classify attack origin
-            origin = classify_attack_origin(
-                shot_row, poss_events, poss_origin, poss_start_sec,
-                match_df=df,
-            )
-
-            # Compute xG
-            xg_val = compute_xg_for_shot(shot_row)
-
-            # Shot details
-            shot_x = float(shot_row.get("x", 0))
-            shot_y = float(shot_row.get("y", 50))
-            type_id = int(shot_row.get("type_id", 13))
-            on_target = type_id in (15, 16)
-            is_goal_event = type_id == 16
-
-            # xGOT (only for on-target shots)
-            xgot_val = estimate_xgot(xg_val, shot_y, on_target) if on_target else 0.0
-
-            # Compute PV for this shot's chain
-            pv_val = self._compute_shot_pv(poss_events, shot_row, poss_start_sec)
-
-            # Big Chance — Opta qualifier on the shot row
-            is_big_chance = _has_qualifier(shot_row, "Big Chance", "big_chance")
-
-            # Penalty — Opta attaches Penalty="Si" directly on the shot row.
-            # Only type_ids 13/14/15/16 (standard shot events) are considered;
-            # type_id=84 (VAR/setup artefacts) is intentionally excluded.
-            is_penalty = bool(
-                type_id in {13, 14, 15, 16}
-                and _has_qualifier(shot_row, "Penalty", "penalty")
-            )
-
-            # Quality tier
-            quality_tier = classify_shot_quality(
-                type_id, xg_val, on_target, is_goal_event, is_big_chance,
-            )
-
-            detail = {
-                "shot_idx": int(idx),
-                "poss_id": int(poss_id),
-                "origin": origin,
-                "x": round(shot_x, 2),
-                "y": round(shot_y, 2),
-                "type_id": type_id,
-                "is_goal": is_goal_event,
-                "on_target": on_target,
-                "in_box": _is_in_penalty_box(shot_x, shot_y),
-                "xG": round(xg_val, 4),
-                "xGOT": round(xgot_val, 4),
-                "PV": round(pv_val, 4),
-                "quality_tier": quality_tier,
-                "is_penalty": is_penalty,
-                "minute": int(shot_row.get("minute", 0) or 0),
-                "second": int(shot_row.get("second", 0) or 0),
-                "period": int(shot_row.get("period", 1) or 1),
-                "player": str(shot_row.get("player_name", "")).strip(),
-                "event_type": str(shot_row.get("event_type",
-                                               shot_row.get("event", ""))).strip(),
-            }
-            shots_detail.append(detail)
-
-            log.debug("Shot %d: origin=%s, xG=%.3f, PV=%.4f, goal=%s",
-                      idx, origin, xg_val, pv_val, is_goal_event)
+        # Sort by match time so shots_detail is chronological
+        shots_detail.sort(key=lambda s: s["minute"] * 60 + s["second"])
 
         return shots_detail
+
+    def _build_shot_detail(
+        self,
+        shot_row: pd.Series,
+        df: pd.DataFrame,
+        idx: int,
+        is_own_goal: bool,
+    ) -> Optional[dict]:
+        """Build a shot detail dict for a regular (non-OG) shot."""
+        poss_id = shot_row.get("poss_id")
+        if pd.isna(poss_id):
+            log.warning("Shot at idx %d has no possession ID — skipping", idx)
+            return None
+
+        poss_events = df[df["poss_id"] == poss_id].copy()
+        poss_origin = poss_events["poss_origin"].iloc[0] if "poss_origin" in poss_events.columns else "open_play"
+        poss_start_sec = poss_events["_match_sec"].iloc[0] if not poss_events.empty else 0.0
+
+        origin = classify_attack_origin(
+            shot_row, poss_events, poss_origin, poss_start_sec, match_df=df,
+        )
+
+        xg_val = compute_xg_for_shot(shot_row)
+
+        shot_x = float(shot_row.get("x", 0))
+        shot_y = float(shot_row.get("y", 50))
+        type_id = int(shot_row.get("type_id", 13))
+        on_target = type_id in (15, 16)
+        is_goal_event = type_id == 16
+
+        xgot_val = estimate_xgot(xg_val, shot_y, on_target) if on_target else 0.0
+        pv_val = self._compute_shot_pv(poss_events, shot_row, poss_start_sec)
+
+        is_big_chance = _has_qualifier(shot_row, "Big Chance", "big_chance")
+        is_penalty = bool(
+            type_id in {13, 14, 15, 16}
+            and _has_qualifier(shot_row, "Penalty", "penalty")
+        )
+        quality_tier = classify_shot_quality(type_id, xg_val, on_target, is_goal_event, is_big_chance)
+
+        detail = {
+            "shot_idx": int(idx),
+            "poss_id": int(poss_id),
+            "origin": origin,
+            "x": round(shot_x, 2),
+            "y": round(shot_y, 2),
+            "type_id": type_id,
+            "is_goal": is_goal_event,
+            "is_own_goal": False,
+            "on_target": on_target,
+            "in_box": _is_in_penalty_box(shot_x, shot_y),
+            "xG": round(xg_val, 4),
+            "xGOT": round(xgot_val, 4),
+            "PV": round(pv_val, 4),
+            "quality_tier": quality_tier,
+            "is_penalty": is_penalty,
+            "minute": int(shot_row.get("minute", 0) or 0),
+            "second": int(shot_row.get("second", 0) or 0),
+            "period": int(shot_row.get("period", 1) or 1),
+            "player": str(shot_row.get("player_name", "")).strip(),
+            "event_type": str(shot_row.get("event_type", shot_row.get("event", ""))).strip(),
+        }
+
+        log.debug("Shot %d: origin=%s, xG=%.3f, PV=%.4f, goal=%s",
+                  idx, origin, xg_val, pv_val, is_goal_event)
+        return detail
+
+    def _build_own_goal_detail(self, shot_row: pd.Series, idx: int) -> Optional[dict]:
+        """Build a shot detail dict for an opponent own goal credited to our team.
+
+        Own goals:
+          - xG = 0.0 (not passed through compute_xg_for_shot)
+          - origin = "Own Goal" (not passed through classify_attack_origin)
+          - quality_tier = 3 (Converted — the ball entered the net)
+          - is_own_goal = True
+          - Coordinates: Opta records the OG in the opponent's frame (their
+            attacking end = high x). We flip x to get our attacking frame so
+            that the marker lands near our goal on the shot map.
+        """
+        # Opta records OG coordinates in the opponent's frame.
+        # Flip x so our shot map places the marker near the attacking goal.
+        opp_x = float(shot_row.get("x", 50) or 50)
+        opp_y = float(shot_row.get("y", 50) or 50)
+        atk_x = round(100.0 - opp_x, 2)
+        atk_y = round(opp_y, 2)
+
+        player_name = str(shot_row.get("player_name", "")).strip()
+        minute = int(shot_row.get("minute", 0) or 0)
+        second = int(shot_row.get("second", 0) or 0)
+
+        return {
+            "shot_idx": int(idx),
+            "poss_id": -1,
+            "origin": "Own Goal",
+            "x": atk_x,
+            "y": atk_y,
+            "type_id": 16,
+            "is_goal": True,
+            "is_own_goal": True,
+            "on_target": True,
+            "in_box": _is_in_penalty_box(atk_x, atk_y),
+            "xG": 0.0,
+            "xGOT": 0.0,
+            "PV": 0.0,
+            "quality_tier": 3,
+            "is_penalty": False,
+            "minute": minute,
+            "second": second,
+            "period": int(shot_row.get("period", 1) or 1),
+            "player": player_name,
+            "event_type": "own_goal",
+        }
 
     def _compute_shot_pv(
         self,
@@ -1415,6 +1495,9 @@ class ChanceCreationAnalyzer:
                 "level_0_low": {"count": 0, "pct": 0.0},
             },
             "shots_detail": [],
+            "goals": 0,
+            "shots": 0,
+            "own_goals": 0,
             "high_regain_kpis": _empty_hr_kpis(15),
         }
 
