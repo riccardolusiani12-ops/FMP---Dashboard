@@ -826,24 +826,24 @@ class TestPossessionValueModelBuild:
 
         return pd.DataFrame(rows)
 
-    def test_build_completes(self):
+    def test_build_completes(self, tmp_path):
         df = self._make_synthetic_match()
         model = PossessionValueModel([df])
-        model.build()
+        model.build(raw_dir=tmp_path)
         assert model.xT is not None
         assert model.xT.shape == (X_ZONES, Y_ZONES)
 
-    def test_build_xt_non_negative(self):
+    def test_build_xt_non_negative(self, tmp_path):
         df = self._make_synthetic_match()
         model = PossessionValueModel([df])
-        model.build()
+        model.build(raw_dir=tmp_path)
         assert (model.xT >= 0).all()
 
-    def test_build_xt_penalty_zone_high(self):
+    def test_build_xt_penalty_zone_high(self, tmp_path):
         """Penalty zone should have non-trivial xT after build."""
         df = self._make_synthetic_match()
         model = PossessionValueModel([df])
-        model.build()
+        model.build(raw_dir=tmp_path)
         # Col 14, row 6 (penalty spot area)
         val = model.xT[14, 6]
         assert val > 0  # should be positive even with tiny data
