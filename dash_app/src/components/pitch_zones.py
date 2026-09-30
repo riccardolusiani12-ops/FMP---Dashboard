@@ -147,10 +147,10 @@ def pitch_zone_figure(
     # Penalty areas (approximate)
     for px in [0, 100]:
         if px == 0:
-            fig.add_shape(type="rect", x0=0, x1=16.5, y0=21, y1=79,
+            fig.add_shape(type="rect", x0=0, x1=16.67, y0=21, y1=79,
                           line=dict(color="rgba(255,255,255,0.12)", width=1))
         else:
-            fig.add_shape(type="rect", x0=83.5, x1=100, y0=21, y1=79,
+            fig.add_shape(type="rect", x0=83.33, x1=100, y0=21, y1=79,
                           line=dict(color="rgba(255,255,255,0.12)", width=1))
 
     # Attacking direction arrow — analysed team always L → R

@@ -549,9 +549,9 @@ def _build_gk_zone_pitch(events: list[dict]) -> go.Figure:
     # Pitch markings
     fig.add_shape(type="line", x0=50, x1=50, y0=0, y1=100,
                   line=dict(color="rgba(255,255,255,0.18)", width=1, dash="dot"))
-    fig.add_shape(type="rect", x0=0,    x1=16.5, y0=21, y1=79,
+    fig.add_shape(type="rect", x0=0,     x1=16.67, y0=21, y1=79,
                   line=dict(color="rgba(255,255,255,0.12)", width=1))
-    fig.add_shape(type="rect", x0=83.5, x1=100,  y0=21, y1=79,
+    fig.add_shape(type="rect", x0=83.33, x1=100,   y0=21, y1=79,
                   line=dict(color="rgba(255,255,255,0.12)", width=1))
     fig.add_annotation(x=92, y=-5, text="ATK →", showarrow=False,
                        font=dict(size=9, color="rgba(255,255,255,0.35)"))
@@ -894,9 +894,9 @@ def _build_ft_zone_pitch(entries: list[dict]) -> "go.Figure":
                   line=dict(color="rgba(255,255,255,0.5)", width=2, dash="dash"))
     fig.add_shape(type="line", x0=50, x1=50, y0=0, y1=100,
                   line=dict(color="rgba(255,255,255,0.18)", width=1, dash="dot"))
-    fig.add_shape(type="rect", x0=0,    x1=16.5, y0=21, y1=79,
+    fig.add_shape(type="rect", x0=0,     x1=16.67, y0=21, y1=79,
                   line=dict(color="rgba(255,255,255,0.12)", width=1))
-    fig.add_shape(type="rect", x0=83.5, x1=100,  y0=21, y1=79,
+    fig.add_shape(type="rect", x0=83.33, x1=100,   y0=21, y1=79,
                   line=dict(color="rgba(255,255,255,0.12)", width=1))
     fig.add_annotation(x=92, y=-5, text="ATK →", showarrow=False,
                        font=dict(size=9, color="rgba(255,255,255,0.35)"))
@@ -1864,12 +1864,12 @@ def build_cc_section(season: str, team_name: str) -> html.Div:
         layer="below",
     )
     fig_zones.add_shape(
-        type="rect", x0=0, x1=16.5, y0=21, y1=79,
+        type="rect", x0=0, x1=16.67, y0=21, y1=79,
         line=dict(color="rgba(255,255,255,0.18)", width=1),
         fillcolor="rgba(0,0,0,0)",
     )
     fig_zones.add_shape(
-        type="rect", x0=83.5, x1=100, y0=21, y1=79,
+        type="rect", x0=83.33, x1=100, y0=21, y1=79,
         line=dict(color="rgba(255,255,255,0.18)", width=1),
         fillcolor="rgba(0,0,0,0)",
     )

@@ -344,7 +344,7 @@ def _possession_pitch_figure(own_half_pct: float, opp_half_pct: float) -> go.Fig
     ))
 
     # Penalty areas
-    pa_w, pa_h = 16.5, 40.32
+    pa_w, pa_h = 16.67, 40.32
     _rect(0, (PH-pa_h)/2, pa_w, (PH+pa_h)/2, lw=1.2)
     _rect(PW-pa_w, (PH-pa_h)/2, PW, (PH+pa_h)/2, lw=1.2)
 

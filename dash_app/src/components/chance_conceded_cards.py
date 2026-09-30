@@ -20,7 +20,7 @@ Coordinate system (after flip in analytics module)
 ───────────────────────────────────────────────────
   x : 0 = own goal-line   → 100 = opponent goal-line
   y : 0 = right touchline → 100 = left touchline
-  Own penalty area: x ∈ [0, 16.5], y ∈ [21, 79]
+  Own penalty area: x ∈ [0, 16.67], y ∈ [21, 79]
 """
 
 from __future__ import annotations
@@ -435,10 +435,10 @@ def _section_origin_grid(shots_detail: list) -> html.Div:
                   line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dash"),
                   layer="below")
     # Own penalty box highlight
-    fig.add_shape(type="rect", x0=0, x1=16.5, y0=21, y1=79,
+    fig.add_shape(type="rect", x0=0, x1=16.67, y0=21, y1=79,
                   line=dict(color="rgba(239,68,68,0.40)", width=2),
                   fillcolor="rgba(239,68,68,0.06)")
-    fig.add_shape(type="rect", x0=83.5, x1=100, y0=21, y1=79,
+    fig.add_shape(type="rect", x0=83.33, x1=100, y0=21, y1=79,
                   line=dict(color="rgba(255,255,255,0.18)", width=1),
                   fillcolor="rgba(0,0,0,0)")
     # Defensive third line
@@ -502,7 +502,7 @@ def _draw_defensive_half(fig: go.Figure) -> None:
         dict(type="rect", x0=0, y0=0, x1=50, y1=100,
              line=dict(color=line_color, width=lw)),
         # Own penalty box
-        dict(type="rect", x0=0, y0=21.1, x1=16.5, y1=78.9,
+        dict(type="rect", x0=0, y0=21.1, x1=16.67, y1=78.9,
              line=dict(color="rgba(239,68,68,0.55)", width=2)),
         # Six-yard box
         dict(type="rect", x0=0, y0=36.8, x1=5.5, y1=63.2,

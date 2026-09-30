@@ -125,9 +125,9 @@ def _draw_formation_markings(fig: go.Figure, theme: str) -> str:
     fig.add_shape(type="circle", x0=49.3, y0=49.3, x1=50.7, y1=50.7,
                   fillcolor=line, line=dict(width=0), layer=below)
     # Penalty areas
-    fig.add_shape(type="rect", x0=0, y0=22, x1=16.5, y1=78,
+    fig.add_shape(type="rect", x0=0, y0=22, x1=16.67, y1=78,
                   line=dict(color=line, width=lw), layer=below)
-    fig.add_shape(type="rect", x0=83.5, y0=22, x1=100, y1=78,
+    fig.add_shape(type="rect", x0=83.33, y0=22, x1=100, y1=78,
                   line=dict(color=line, width=lw), layer=below)
     # 6-yard boxes
     fig.add_shape(type="rect", x0=0, y0=36, x1=5.5, y1=64,
