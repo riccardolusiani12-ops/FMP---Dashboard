@@ -167,3 +167,41 @@ Eseguita il 2026-09-30 a partire dal tag `pre-phase2b-box-visual-2026-09-30`, in
 - Verifica figure reali: generate `chance_creation_card()` e `chance_conceded_card()` con l'output di `analyse_chance_creation()`/`analyse_chance_conceded()` su Bologna–Roma (giornata 34, 2025/26, ultima con CSV raw reale), più `pitch_zones.pitch_zone_figure()` e `pitch_utils.draw_pitch(style="formation")` invocate direttamente. In tutte le figure ispezionate, i rettangoli area risultano `x0=83.33`/`x1=16.67` (nessun `83.5`/`16.5` residuo); numero di shape e tracce coerente con l'atteso per ciascun grafico (nessuna shape aggiunta/rimossa dalla modifica).
 - Smoke test app: avvio pulito su porta 8050, cache 5 stagioni scaldata, nessun errore/warning nuovo; arrestata correttamente.
 - Nessun push eseguito.
+
+---
+
+## Fase 2c — Soglia area analitica
+
+Eseguita il 2026-09-30 a partire dal tag `pre-phase2c-box-threshold-2026-09-30`, in risposta al punto 7 sopra (`OPP_BOX_X_MIN = 83.5` in `defensive_structure.py:104`, presunta soglia analitica per la classificazione N2 "Inside box").
+
+### Falso positivo: la soglia 83.5 era codice morto
+L'analisi d'impatto in Fase 0 ha rivelato che `OPP_BOX_X_MIN` **non è mai stata letta da nessuna logica di classificazione** — è comparsa solo nella propria definizione e in un commento a blocco che la descriveva come se fosse usata. La classificazione reale N2/N3 "Inside box" (righe 552-557, 583-591) usa da sempre `BOX_X = 83.33` (già canonico, definito alla riga 142) insieme a `OPP_BOX_Y_MIN`/`OPP_BOX_Y_MAX`.
+
+Verifica empirica: ricaricando il modulo con `OPP_BOX_X_MIN=83.5` vs `83.33` e ricalcolando `analyse_defensive_structure()` su tutte le 38 partite di Bologna 2025/26 disponibili, la `outcome_distribution` (N1/N2/N3) è risultata **identica in ogni singola partita** — zero eventi riclassificati, coerentemente con l'assenza di uso della costante. **Il punto 7 del sanity check era quindi un falso positivo: la soglia 83.5 non ha mai influenzato alcun output analitico della dashboard.**
+
+### Modifica applicata (non l'opzione (a) inizialmente proposta)
+Anziché riassegnare `OPP_BOX_X_MIN = BOX_X` (opzione (a) proposta al checkpoint), su indicazione esplicita è stata **rimossa la definizione della costante orfana**:
+- `OPP_BOX_X_MIN: float = 83.5` (riga 104) eliminata.
+- Commento a blocco (riga 98) aggiornato per descrivere la regola realmente applicata: `"Inside box : Team B raw x ≥ BOX_X AND y ∈ [OPP_BOX_Y_MIN, OPP_BOX_Y_MAX]"`.
+- `OPP_CENTRAL_X_MIN` (66.67) e `OPP_DEEP_ATT_X_MIN` (75.0) **non toccate** — sono anch'esse costanti orfane (documentate nello stesso blocco di commento ma mai referenziate nella logica), segnalate qui come follow-up eventuale ma fuori scope per questa fase.
+
+### File toccati (commit `d7a4219`)
+- `dash_app/src/analytics/defensive_structure.py` — unica modifica di produzione (rimozione costante + aggiornamento commento).
+- `dash_app/tests/test_defensive_structure_box_threshold.py` — nuovo file di test (nessun test esistente modificato).
+
+### Nuovo test
+Costruito un fixture minimale a due eventi (Dispossessed della squadra analizzata come trigger, seguito da un cross avversario nella finestra di transizione) che esercita realmente `compute_defensive_transitions()` — non un mock — per verificare il confine `BOX_X = 83.33`:
+- `TestBoxThresholdConstant`: `BOX_X == 83.33`; `OPP_BOX_X_MIN` non più definita nel modulo.
+- `TestInsideBoxClassificationBoundary`: cross con `Pass End X = 83.4` → outcome `N2` (Inside box); cross con `Pass End X = 83.3` → outcome ≠ `N2`.
+
+### Verifica
+- `grep -rn "83\.5" dash_app/src/` → nessuna occorrenza analitica residua (solo il commento storico in `pitch_utils.py:55`, invariato dalla Fase 2b).
+- `git diff --stat pre-phase2c-box-threshold-2026-09-30 -- dash_app/src/` → solo `defensive_structure.py` (4 righe modificate).
+- `pytest -q` → **122/122 verdi** (118 esistenti + 4 nuovi), stessi 2 `FutureWarning` già noti.
+- Ricalcolo Bologna–Roma (giornata 34, 2025/26) dopo la modifica: `outcome_distribution = {'N1': 14, 'N2': 0, 'N3': 1}` — identico al valore misurato in Fase 0, confermando l'assenza di impatto.
+- Nessun parquet rigenerato (non necessario: l'impatto misurato è strutturalmente zero).
+- Smoke test app: avvio pulito su porta 8050, cache 5 stagioni scaldata, nessun errore/warning nuovo; arrestata correttamente.
+- Nessun push eseguito.
+
+### Follow-up aperto
+- `OPP_CENTRAL_X_MIN` e `OPP_DEEP_ATT_X_MIN` in `defensive_structure.py` restano costanti orfane (documentate ma mai lette) — da valutare in un futuro giro di pulizia se si vuole rimuovere anche queste o effettivamente cablarle nella logica.
