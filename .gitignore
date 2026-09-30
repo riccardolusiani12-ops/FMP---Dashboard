@@ -33,4 +33,15 @@ Thumbs.db
 .vscode/
 .idea/
 *.egg-info/
-data/
+
+# Ignore everything under data/ by default (raw Opta CSVs, cache, external
+# CSVs, etc. — most of it also matches *.csv/*.json above), but explicitly
+# re-include the precomputed parquet directories the app reads from so a
+# future precompute run doesn't get silently excluded from git.
+# NOTE: git can't re-include a file whose parent dir is excluded, hence
+# `data/*` (not `data/`) plus a directory-level exception for each folder.
+data/*
+!data/ready/
+!data/ready/*.parquet
+!data/processed/
+!data/processed/*.parquet
