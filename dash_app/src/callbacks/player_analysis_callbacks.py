@@ -28,14 +28,23 @@ from src.components.player_analysis_cards import (
     build_kpi_breakdown_modal_body,
     render_sequence_view,
 )
+from src.utils.match_events import ensure_match_csv
 from src.utils.pv_model import PossessionValueModel
 
 
 def _store_csv_team(store):
-    """Unpack the mp-match-store payload {"csv","team"} (tolerant of legacy str)."""
+    """Unpack the mp-match-store payload {"csv","team"} (tolerant of legacy str).
+
+    Without data/raw/ the stored CSV is a temp file rebuilt from the published
+    parquet; ensure_match_csv() rebuilds it if it has been evicted meanwhile.
+    """
     if isinstance(store, dict):
-        return store.get("csv"), store.get("team", "")
-    return store, ""  # legacy: plain CSV path string
+        csv, team = store.get("csv"), store.get("team", "")
+    else:
+        csv, team = store, ""  # legacy: plain CSV path string
+    if csv:
+        csv = str(ensure_match_csv(Path(csv)))
+    return csv, team
 
 
 def register_player_analysis_callbacks(app):

@@ -16,7 +16,7 @@ from dash import dcc, html
 from src.analytics.data_loader import load_season_matches_cached
 from src.team_mapping import canonical_name, logo_url
 from src.utils.logging import log
-from src.utils.paths import list_match_files, parse_match_filename
+from src.utils.paths import match_analysis_files, parse_match_filename
 
 
 # ---------------------------------------------------------------------------
@@ -154,11 +154,28 @@ def _transitions_phase(match_csv: Path, team: str) -> html.Div:
 # MATCH CARD  (grid card with logos, GW badge and result)
 # ---------------------------------------------------------------------------
 
+def _week_number(info: dict) -> Optional[int]:
+    """Gameweek as int; None for a non-numeric week (e.g. "NA" on the 2022/23
+    Spezia–Verona relegation play-off, stored as Matchday 0 in the index)."""
+    week = str(info.get("week", "")).strip()
+    return int(week) if week.isdigit() else None
+
+
+def match_analysis_unavailable_message(season: str) -> html.P:
+    """Shown when a season has no match data in this deploy (not published online)."""
+    return html.P(
+        f"Match Analysis is not available online for the "
+        f"{season.replace('_', '/')} season.",
+        className="text-muted",
+    )
+
+
 def _match_card(info: dict, prefix: str, score: Optional[tuple]) -> html.Div:
     """One card in the match-list grid — uses CSS .match-card classes."""
     home = canonical_name(info["home"])
     away = canonical_name(info["away"])
     gw   = info.get("week", "?")
+    gw_label = f"GW{gw}" if _week_number(info) is not None else "Play-off"
 
     if score is not None:
         hg, ag = score
@@ -201,7 +218,7 @@ def _match_card(info: dict, prefix: str, score: Optional[tuple]) -> html.Div:
                 ),
                 html.Div(
                     [html.I(className="bi bi-geo-alt-fill me-1"),
-                     html.Span(f"GW{gw}",
+                     html.Span(gw_label,
                                style={"fontSize": "0.75rem",
                                       "color": "var(--text-secondary)"}),
                     ],
@@ -218,23 +235,29 @@ def _match_card(info: dict, prefix: str, score: Optional[tuple]) -> html.Div:
 
 def _match_list_layout(season: str, team: str, prefix: str) -> html.Div:
     """Grid of match cards for the selected team, sorted by gameweek."""
-    files      = list_match_files(season)
+    files      = match_analysis_files(season)
     team_lower = canonical_name(team).lower()
     scores     = _score_lookup(season)
     cards      = []
 
-    for f in sorted(files, key=lambda p: int(parse_match_filename(p).get("week", 0) or 0)):
+    def _sort_key(p):
+        week = _week_number(parse_match_filename(p))
+        return (week is None, week or 0)
+
+    for f in sorted(files, key=_sort_key):
         info   = parse_match_filename(f)
         home_c = canonical_name(info["home"])
         away_c = canonical_name(info["away"])
         if team_lower not in (home_c.lower(), away_c.lower()):
             continue
 
-        gw_int = int(info.get("week", 0) or 0)
+        gw_int = _week_number(info) or 0
         score  = scores.get((gw_int, home_c, away_c))
         cards.append(_match_card(info, prefix, score))
 
-    if not cards:
+    if not files:
+        body = match_analysis_unavailable_message(season)
+    elif not cards:
         body = html.P(f"No matches found for {team} ({season.replace('_', '/')})",
                       className="text-muted")
     else:

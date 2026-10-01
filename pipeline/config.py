@@ -58,6 +58,13 @@ def normalize_season_key(value: str) -> str:
     return f"{start}_{end}"
 
 
+def load_match_analysis_seasons() -> list[str]:
+    """Stagioni con la Match Analysis pubblicata online (match_analysis_seasons)."""
+    with open(SEASONS_FILE, "rb") as f:
+        cfg = tomllib.load(f)
+    return [normalize_season_key(s) for s in cfg["defaults"].get("match_analysis_seasons", [])]
+
+
 def load_season(season: str | None = None) -> Season:
     with open(SEASONS_FILE, "rb") as f:
         cfg = tomllib.load(f)

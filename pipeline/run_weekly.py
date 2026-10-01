@@ -9,7 +9,9 @@ Passi (arresto al primo errore; in quel caso niente commit né push):
    5. conversione in CSV
    6. controlli di qualità                    (--dry-run si ferma qui)
    7. copia dei CSV nella cartella raw della dash
-   8. precompute della sola stagione corrente
+   8. precompute della sola stagione corrente + parquet di partita della Match
+      Analysis online (data/match_events/, solo se la stagione è in
+      match_analysis_seasons di seasons.toml)
    9. pytest -q
   10. commit dei soli parquet cambiati + push su origin main (salvo --no-push)
   11. notifica macOS con l'esito
@@ -38,7 +40,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config import DASH_DIR, DASH_PYTHON, LOGS_DIR, REPO_ROOT, Season, load_season  # noqa: E402
+from config import (  # noqa: E402
+    DASH_DIR, DASH_PYTHON, LOGS_DIR, REPO_ROOT, Season, load_match_analysis_seasons, load_season,
+)
 from convert import convert_file  # noqa: E402
 from download import download_matches  # noqa: E402
 from fetch_matches import fetch_matches, played_matches  # noqa: E402
@@ -51,7 +55,8 @@ log = logging.getLogger("pipeline")
 STAMP_FILE = REPO_ROOT / "pipeline" / "_work" / ".last_success"
 READY_DIR = REPO_ROOT / "data" / "ready"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed"
-DATA_PATHS = ["data/ready", "data/processed"]
+MATCH_EVENTS_DIR = REPO_ROOT / "data" / "match_events"
+DATA_PATHS = ["data/ready", "data/processed", "data/match_events"]
 # Il modello xG in cache viene riaddestrato dal precompute quando cambia il
 # numero di CSV raw (comportamento esistente della dash, src/analytics/xg.py).
 XG_CACHE = "data/cache/xg_model.pkl"
@@ -170,7 +175,7 @@ def preflight(args) -> None:
     dirty = [l for l in git("status", "--porcelain", "--", *DATA_PATHS, XG_CACHE).splitlines()
              if not l.startswith("??")]
     if dirty:
-        raise StepError(0, f"modifiche non committate in data/ready, data/processed o {XG_CACHE} ({len(dirty)} file)")
+        raise StepError(0, f"modifiche non committate in {', '.join(DATA_PATHS)} o {XG_CACHE} ({len(dirty)} file)")
 
 
 def step_missing(season: Season, client: OptaClient, fallbacks: list[str]):
@@ -224,6 +229,24 @@ def step_precompute(season: Season, started: float) -> None:
     log.info("[8] .csv_count_%s = %d", season.key, n)
 
 
+def step_match_events(season: Season, started: float) -> None:
+    """Parquet di partita per la Match Analysis online, solo per la stagione corrente."""
+    if season.key not in load_match_analysis_seasons():
+        log.info("[8] %s non è in match_analysis_seasons: nessun parquet di partita", season.label)
+        return
+    rc = run_logged([str(DASH_PYTHON), "-m", "src.utils.match_events", "export", "--season", season.key],
+                    DASH_DIR)
+    if rc != 0:
+        raise StepError(8, f"export dei parquet di partita terminato con codice {rc}")
+    out_dir = MATCH_EVENTS_DIR / season.key
+    published = {p.stem for p in out_dir.glob("*.parquet")}
+    missing = [p.name for p in season.raw_events_dir.glob("*.csv") if p.stem not in published]
+    if missing:
+        raise StepError(8, f"parquet di partita mancanti: {', '.join(sorted(missing))}")
+    new = sum(1 for p in out_dir.glob("*.parquet") if p.stat().st_mtime >= started)
+    log.info("[8] match events %s: %d nuovi parquet (%d pubblicati)", season.key, new, len(published))
+
+
 def rollback(season: Season, copied: list[Path], created_raw_dir: bool, started: float,
              csv_count_backup, xg_cache_clean: bool) -> None:
     log.warning("↩️  Ripristino dello stato precedente …")
@@ -235,7 +258,8 @@ def rollback(season: Season, copied: list[Path], created_raw_dir: bool, started:
             if d.exists() and not any(d.iterdir()):
                 d.rmdir()
     # parquet tracciati → versione committata; non tracciati creati in questo run → rimossi
-    git("checkout", "--", *DATA_PATHS, check=False)
+    for rel in DATA_PATHS:  # uno per volta: un percorso non tracciato non blocca gli altri
+        git("checkout", "--", rel, check=False)
     if xg_cache_clean:
         git("checkout", "--", XG_CACHE, check=False)
     # file non tracciati creati in questo run (parquet, sidecar k_table.json)
@@ -257,7 +281,9 @@ def committable(rel: str, season: Season) -> bool:
 
 def step_commit(season: Season, gw: str, push: bool) -> str:
     changed = []
-    for line in git("status", "--porcelain", "--", *DATA_PATHS, XG_CACHE).splitlines():
+    # -uall: i file di una cartella nuova (es. data/match_events/<nuova stagione>/)
+    # vanno elencati uno per uno, non come cartella.
+    for line in git("status", "--porcelain", "--untracked-files=all", "--", *DATA_PATHS, XG_CACHE).splitlines():
         rel = line[3:].strip()
         if committable(rel, season):
             changed.append(rel)
@@ -382,6 +408,7 @@ def run(args) -> int:
         log.info("[7] copiati %d CSV in %s", len(copied), season.raw_events_dir.relative_to(REPO_ROOT))
 
         step_precompute(season, started)
+        step_match_events(season, started)
 
         rc = run_logged([str(DASH_PYTHON), "-m", "pytest", "-q"], DASH_DIR)
         if rc != 0:

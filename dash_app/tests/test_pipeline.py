@@ -12,10 +12,11 @@ import pytest
 PIPELINE_DIR = Path(__file__).resolve().parents[2] / "pipeline"
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from config import load_season, normalize_season_key  # noqa: E402
+from config import load_match_analysis_seasons, load_season, normalize_season_key  # noqa: E402
 from convert import build_output_filename, normalize_team_name  # noqa: E402
 from quality import QualityError, check_csvs  # noqa: E402
-from run_weekly import committable, fallback_note, gw_label  # noqa: E402
+import run_weekly  # noqa: E402
+from run_weekly import StepError, committable, fallback_note, gw_label, step_match_events  # noqa: E402
 
 
 @pytest.mark.parametrize("value", ["2026/27", "2026/2027", "2026-27", "2026_2027"])
@@ -44,6 +45,40 @@ def test_committable_files():
     assert not committable("data/ready/.csv_count_2025_2026", s)
     assert not committable("data/raw/serie_a_2026_2027/events/1_A_B_x.csv", s)
     assert not committable("data/ready/player_season_2026_2027_k_table.json", s)
+    assert committable("data/match_events/2026_2027/6_Bologna_Lazio_abc.parquet", s)
+    assert "data/match_events" in run_weekly.DATA_PATHS
+
+
+def test_match_analysis_seasons_config():
+    seasons = load_match_analysis_seasons()
+    assert seasons == ["2026_2027", "2025_2026"]
+    assert load_season().key in seasons
+
+
+def test_step_match_events(tmp_path, monkeypatch):
+    s = load_season("2026/27")
+    calls = []
+    monkeypatch.setattr(run_weekly, "run_logged", lambda cmd, cwd: calls.append(cmd) or 0)
+    monkeypatch.setattr(run_weekly, "MATCH_EVENTS_DIR", tmp_path / "match_events")
+
+    # stagione non pubblicata online → nessun export
+    monkeypatch.setattr(run_weekly, "load_match_analysis_seasons", lambda: ["2025_2026"])
+    step_match_events(s, started=0)
+    assert calls == []
+
+    # stagione pubblicata: export della sola stagione corrente, poi controllo completezza
+    monkeypatch.setattr(run_weekly, "load_match_analysis_seasons", lambda: ["2026_2027", "2025_2026"])
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "6_Bologna_Lazio_abc.csv").touch()
+    s = type(s)(**{**s.__dict__, "raw_events_dir": raw})
+    with pytest.raises(StepError, match="mancanti: 6_Bologna_Lazio_abc.csv"):
+        step_match_events(s, started=0)
+    assert calls[-1][-4:] == ["src.utils.match_events", "export", "--season", "2026_2027"]
+    out = tmp_path / "match_events" / "2026_2027"
+    out.mkdir(parents=True)
+    (out / "6_Bologna_Lazio_abc.parquet").touch()
+    step_match_events(s, started=0)
 
 
 def test_fallback_note():

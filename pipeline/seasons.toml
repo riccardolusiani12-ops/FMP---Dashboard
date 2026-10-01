@@ -29,6 +29,12 @@ work_dir = "pipeline/_work"
 # 2 e 3 (verificato 2026-09-30).
 browser_headless = false
 
+# Stagioni la cui Match Analysis è pubblicata online (Render, senza data/raw/):
+# per ognuna il repo contiene data/match_events/<stagione>/<partita>.parquet.
+# La pipeline settimanale aggiorna solo la stagione corrente, se è in elenco.
+# Al cambio di stagione vedi pipeline/README.md ("Match Analysis online").
+match_analysis_seasons = ["2026_2027", "2025_2026"]
+
 [seasons.2026_2027]
 label = "2026/27"
 # matchInfo.tournamentCalendar.id — dall'API soccerdata/tournamentcalendar.

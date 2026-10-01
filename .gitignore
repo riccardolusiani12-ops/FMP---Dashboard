@@ -45,6 +45,11 @@ data/*
 !data/ready/*.parquet
 !data/processed/
 !data/processed/*.parquet
+# Per-match event parquets for the online Match Analysis (one folder per
+# season listed in match_analysis_seasons, pipeline/seasons.toml).
+!data/match_events/
+!data/match_events/*/
+!data/match_events/*/*.parquet
 
 # ── Pipeline dati settimanale (pipeline/) ────────────────────────────────────
 # JSON e CSV intermedi e log restano locali; i transformer Opta invece sono

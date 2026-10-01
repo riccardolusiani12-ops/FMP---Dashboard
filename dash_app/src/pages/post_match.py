@@ -7,17 +7,19 @@ Routes: /team-analysis/match-analysis
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
-from src.config import AVAILABLE_SEASONS
 from src.styling.ui_components import unified_dropdown
+from src.utils.paths import match_analysis_seasons
 
 
 def layout() -> html.Div:
     """Return the match analysis page with team/match selection flow."""
+    # All seasons locally; online only those with published match events.
+    seasons = match_analysis_seasons()
     season_opts = [
         {"label": s.replace("_", "/"), "value": s}
-        for s in AVAILABLE_SEASONS
+        for s in seasons
     ]
-    default_season = AVAILABLE_SEASONS[-1] if AVAILABLE_SEASONS else "2024_2025"
+    default_season = seasons[-1] if seasons else "2024_2025"
 
     return html.Div(
         [

@@ -17,6 +17,9 @@ PROCESSED_DATA_DIR: Final[Path] = DATA_DIR / "processed"
 READY_DATA_DIR: Final[Path] = DATA_DIR / "ready"
 CACHE_DIR: Final[Path] = DATA_DIR / "cache"
 EXTERNAL_DATA_DIR: Final[Path] = DATA_DIR / "external"
+# Compact per-match event parquets published for the online Match Analysis
+# (git-based deploy without data/raw/) — see src/utils/match_events.py.
+MATCH_EVENTS_DIR: Final[Path] = DATA_DIR / "match_events"
 
 OUTPUTS_DIR: Final[Path] = REPO_ROOT / "outputs"
 MANIFEST_PATH: Final[Path] = OUTPUTS_DIR / "manifest.json"

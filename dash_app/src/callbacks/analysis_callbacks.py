@@ -32,11 +32,13 @@ from src.components.analysis_cards import (
     _analysis_view,
     _opponent_team,
     _score_lookup,
+    match_analysis_unavailable_message,
 )
 from src.components.team_card import analysis_team_card
 from src.team_mapping import canonical_name, logo_url, team_from_slug
 from src.utils.logging import log
-from src.utils.paths import list_match_files, parse_match_filename
+from src.utils.match_events import materialize_match_csv
+from src.utils.paths import match_analysis_files, parse_match_filename
 
 
 # ---------------------------------------------------------------------------
@@ -44,14 +46,18 @@ from src.utils.paths import list_match_files, parse_match_filename
 # ---------------------------------------------------------------------------
 
 def _find_match_csv(season: str, match_id: str) -> Optional[Path]:
-    for f in list_match_files(season):
+    """Match CSV for *match_id*: the raw file, or one rebuilt from its published
+    parquet when data/raw/ is absent (see src/utils/match_events.py)."""
+    for f in match_analysis_files(season):
         info = parse_match_filename(f)
         if info["match_id"] == match_id:
-            return f
+            return materialize_match_csv(f) if f.suffix == ".parquet" else f
     return None
 
 
 def _teams_grid_children(season: str, prefix: str) -> list:
+    if prefix == "ma" and not match_analysis_files(season):
+        return [match_analysis_unavailable_message(season)]
     teams = load_season_teams(season)
     if not teams:
         return [html.P(f"No teams found for {season.replace('_', '/')}.",
@@ -165,6 +171,8 @@ def _register_prefix(app, prefix: str):
             return hide, show, _match_list_layout(season, team, _p), hide, no_update
 
         match_csv = _find_match_csv(season, match_id)
+        if match_csv is None and not match_analysis_files(season):
+            return hide, hide, no_update, show, match_analysis_unavailable_message(season)
         if match_csv is None:
             err = dbc.Alert(
                 f"Match CSV not found for id '{match_id}' in season {season}.",

@@ -98,7 +98,7 @@ Opzioni pensate per launchd:
 
 ### Passi di `run_weekly.py`
 
-0. Verifiche preliminari (non in `--dry-run`): branch `main`, niente in staging, nessuna modifica non committata in `data/ready`, `data/processed` o `data/cache/xg_model.pkl`.
+0. Verifiche preliminari (non in `--dry-run`): branch `main`, niente in staging, nessuna modifica non committata in `data/ready`, `data/processed`, `data/match_events` o `data/cache/xg_model.pkl`.
 1. Elenco partite della stagione: sono "giocate" quelle con `matchStatus == Played`.
 2. Confronto dei `match_id` con i CSV già in `data/raw/serie_a_<stagione>/events/`.
 3. Se non manca nulla: notifica "nessuna nuova partita" e fine. Se ci sono commit della pipeline non pushati per un push fallito in precedenza, vengono pubblicati qui.
@@ -109,9 +109,10 @@ Opzioni pensate per launchd:
 8. Precompute della sola stagione:
    - prima rimuove `player_season_<stagione>.parquet` **della sola stagione corrente**, altrimenti il precompute lo salterebbe;
    - poi verifica che ogni famiglia di parquet sia stata rigenerata;
-   - infine scrive `data/ready/.csv_count_<stagione>`, il riferimento usato dal controllo "stale data" dell'app.
+   - infine scrive `data/ready/.csv_count_<stagione>`, il riferimento usato dal controllo "stale data" dell'app;
+   - se la stagione è in `match_analysis_seasons`, esporta i parquet di partita delle sole partite nuove in `data/match_events/<stagione>/` e verifica che ogni CSV raw abbia il suo (vedi [Match Analysis online](#match-analysis-online)).
 9. `pytest -q`.
-10. Commit (`data: add Serie A 2026/27 GW<n>`) dei parquet cambiati, di `.csv_count_<stagione>` e di `xg_model.pkl`, poi push su `origin main`, salvo `--no-push`.
+10. Commit (`data: add Serie A 2026/27 GW<n>`) dei parquet cambiati (compresi i nuovi `data/match_events/<stagione>/*.parquet`), di `.csv_count_<stagione>` e di `xg_model.pkl`, poi push su `origin main`, salvo `--no-push`.
 11. Notifica con l'esito. Se durante il run è servito un ripiego browser, la notifica lo dice esplicitamente, per esempio "⚠️ API non disponibile, usato ripiego browser (download di 3 partite)".
 
 La pipeline si ferma al primo errore. Se il problema avviene tra i passi 7 e 10, prima del commit, la pipeline ripristina lo stato precedente: rimuove i CSV copiati, riporta i parquet tracciati alla versione committata e cancella quelli nuovi. Così l'esecuzione successiva riparte pulita.
@@ -144,6 +145,45 @@ Un lock (`_work/.run.lock`) impedisce due esecuzioni contemporanee.
 5. Lancia `run_weekly.py --dry-run`, poi `--no-push`.
 
 In locale la dash vede la stagione appena esiste `data/raw/serie_a_<stagione>/`. Su Render, dove `data/raw/` non c'è, la vede quando esiste `data/ready/standings_<stagione>.parquet` (`src/config.py:discover_seasons`).
+
+Per la Match Analysis online vedi anche la sezione [Cambio di stagione](#cambio-di-stagione).
+
+## Match Analysis online
+
+Le sezioni della Match Analysis leggono i dati evento della singola partita. In locale li prendono da `data/raw/`; su Render, dove `data/raw/` non c'è, li prendono da parquet compatti versionati nel repo:
+
+```
+data/match_events/<stagione>/<stesso nome del CSV raw>.parquet
+```
+
+- **Quali stagioni:** solo quelle elencate in `match_analysis_seasons` (`seasons.toml`, sezione `[defaults]`). Su Render il selettore della Match Analysis mostra solo queste stagioni. Se si arriva a un'altra stagione, compare il messaggio "Match Analysis is not available online for the … season". In locale si vedono sempre tutte.
+- **Contenuto:** le 108 colonne lette dalla Match Analysis (`MATCH_EVENT_COLUMNS` in `dash_app/src/utils/match_event_columns.py`), con ogni cella salvata come testo originale. Circa 96 KB per partita, circa 36 MB per stagione completa.
+  - Quando si apre una partita, il CSV viene ricostruito in `/tmp/fmp_match_events/` (al massimo 30 file, i meno usati vengono rimossi). Le analisi lo leggono come un CSV raw, con gli stessi tipi e quindi gli stessi numeri.
+- **Guardia:** `tests/test_match_events.py` fallisce se un modulo della Match Analysis inizia a usare una colonna non pubblicata. In quel caso:
+  1. aggiungi la colonna a `MATCH_EVENT_COLUMNS`;
+  2. riesporta con `--force` le stagioni pubblicate.
+- **Pipeline:** il passo 8 aggiorna solo la stagione corrente, se è in `match_analysis_seasons`, ed esporta solo le partite nuove (circa 1 MB a giornata).
+
+Comandi manuali (da `dash_app/`):
+
+```bash
+.venv/bin/python -m src.utils.match_events export --season 2026_2027 [--season ...] [--force]
+.venv/bin/python -m src.utils.match_events prune --keep 2026_2027 2025_2026
+```
+
+### Cambio di stagione
+
+Esempio: arriva il 2027/28 e si tengono online due stagioni.
+
+1. Completa i passi di [Aggiungere una stagione](#aggiungere-una-stagione).
+2. In `seasons.toml` aggiorna `match_analysis_seasons`: aggiungi la nuova stagione e togli la più vecchia, per esempio `["2027_2028", "2026_2027"]`.
+3. Rimuovi dal repo le stagioni non più elencate:
+   ```bash
+   cd dash_app && .venv/bin/python -m src.utils.match_events prune --keep 2027_2028 2026_2027
+   ```
+4. Committa la rimozione (`git add -A data/match_events && git commit`). I parquet della nuova stagione li crea e committa la pipeline al primo run con partite nuove. Per anticiparli lancia `export --season 2027_2028`.
+
+I file rimossi spariscono dal deploy ma **restano nella storia git**: il repo non si alleggerisce, e una stagione tolta si può ripubblicare rilanciando `export`. Per eliminarli davvero dalla storia serve una riscrittura (`git filter-repo`), da valutare a parte.
 
 ## Metodi di ripiego
 
