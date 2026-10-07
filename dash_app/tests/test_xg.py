@@ -172,3 +172,48 @@ def test_penalty_and_own_goal_do_not_trigger_model():
     ])
     xg = compute_batch_xg(df)
     assert len(xg) == 2
+
+
+# ── Model cache without raw CSVs (git-based deploy, e.g. Render) ──────────────
+
+def _fitted_model() -> XGModel:
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(200, len(FEATURE_COLS)))
+    y = (X[:, 0] > 0.5).astype(int)
+    model = XGModel()
+    model.fit(X, y, lr=0.05, n_iter=50)
+    return model
+
+
+@pytest.fixture
+def xg_cache(tmp_path, monkeypatch):
+    import src.analytics.xg as xg
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    cache = tmp_path / "xg_model.pkl"
+    cached = _fitted_model()
+    cached.save(cache, csv_count=1950)
+    monkeypatch.setattr(xg, "RAW_DATA_DIR", raw)
+    monkeypatch.setattr(xg, "_MODEL_CACHE_PATH", cache)
+    monkeypatch.setattr(xg, "_XG_MODEL", None)
+    return xg, raw, cache, cached
+
+
+def test_get_model_without_raw_csvs_uses_cache_untouched(xg_cache, monkeypatch):
+    xg, _, cache, cached = xg_cache
+    before = cache.read_bytes()
+    monkeypatch.setattr(xg, "_train_model", lambda: pytest.fail("must not retrain"))
+    model = xg._get_model()
+    np.testing.assert_array_equal(model.coef_, cached.coef_)
+    assert model.intercept_ == cached.intercept_
+    assert cache.read_bytes() == before
+
+
+def test_get_model_with_raw_csvs_still_retrains_when_stale(xg_cache, monkeypatch):
+    xg, raw, cache, _ = xg_cache
+    (raw / "serie_a_2026_2027" / "events").mkdir(parents=True)
+    (raw / "serie_a_2026_2027" / "events" / "1_A_B_x.csv").touch()
+    retrained = _fitted_model()
+    monkeypatch.setattr(xg, "_train_model", lambda: retrained)
+    assert xg._get_model() is retrained
+    assert XGModel.load(cache)[1] == 1        # cache refreshed with the new count

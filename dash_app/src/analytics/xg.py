@@ -572,6 +572,15 @@ def _get_model() -> XGModel:
                 )
                 _XG_MODEL = model
                 return _XG_MODEL
+            elif current_csv_count == 0:
+                # No raw CSVs (git-based deploy, e.g. Render): nothing to retrain
+                # on — use the versioned cache as is and leave it untouched.
+                log.info(
+                    "xG model: no raw CSVs — using cache as is (trained on %d CSVs)",
+                    cached_csv_count,
+                )
+                _XG_MODEL = model
+                return _XG_MODEL
             else:
                 log.info(
                     "xG model: cache stale (%d → %d CSVs) — retraining",
