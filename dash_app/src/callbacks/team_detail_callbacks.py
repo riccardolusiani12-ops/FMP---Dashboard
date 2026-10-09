@@ -391,7 +391,7 @@ def register_team_detail_callbacks(app):
         prevent_initial_call=False,
     )
     def update_ppda_scatter(selected_season: str, context: dict):
-        """Build the PPDA vs regain scatter chart from precomputed data."""
+        """Build the PPDA vs Field Tilt scatter chart from precomputed data."""
         team = context.get("team", "")
         ppda_df = load_ppda_summary(selected_season)
         return build_ppda_scatter_figure(ppda_df, highlight_team=team)
