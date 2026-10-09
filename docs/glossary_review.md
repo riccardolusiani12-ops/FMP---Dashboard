@@ -11,7 +11,8 @@
 | Entries shown in more than one section | 94 |
 | UI metric labels inventoried | 430 rows (Team Overview 57 · Match Analysis 192 · Opponent Analysis 181) |
 | Labels explicitly unmapped (visuals, no metric) | 6 |
-| Entries flagged `needs_review` | 12 |
+| Entries flagged `needs_review` | 0 (12 reviewed and confirmed by owner on 2026-10-09, §5) |
+| Entries flagged `pending_fix` | 5 (season aggregation fix pending, §5) |
 | Season values that break the ratio-of-sums rule | 4 (reported, not fixed; originally 5, Field Tilt % since fixed on main) |
 | Probable code defects found | 9 (reported, not fixed) |
 | New tests | 1,676 cases, all pass · existing suite 156/156 unchanged |
@@ -79,9 +80,9 @@ Why: it matches the repo's Python-config convention, it can't be swallowed by th
 | `reading` + `reading_note` | `higher_better` / `lower_better` / `contextual` + one line why |
 | `methodology` | Markdown: filters, zones, windows, thresholds, edge cases, season aggregation, code-reference caveats |
 | `notes` | caveats, incl. doc/UI-vs-code discrepancies |
-| `source_doc` | CURRENT doc path, or `null` only when `status = needs_review` |
+| `source_doc` | CURRENT doc path, or `null` only when `status = needs_review` or the id is in the test allowlist `NO_SOURCE_DOC` (9 code-derived entries, §5) |
 | `variants` | only when the same name means different things in different sections (used for `starts`) |
-| `status` | `ok` / `needs_review` *(addition)* |
+| `status` | `ok` / `needs_review` / `pending_fix` *(addition)*. `pending_fix` = a known code issue will change the value; the card shows "definition may change" |
 | `season_aggregation` | how the season value is built: `sum`, `total_per_match`, `ratio_of_sums`, `mean_of_match_values`, `median_of_match_values`, `season_events`, `rank_percentile`, `shrinkage_adjusted`, `external`, or `null` (match only) *(addition — makes the ratio-of-sums rule testable)* |
 
 **PPDA.** The two definitions are two distinct entries, never merged, each with an explicit note:
@@ -135,24 +136,51 @@ A third narrow-definition entry, `ppda_final_third`, covers the **Match Analysis
 
 (Section totals exceed 177 because 94 entries appear in more than one section.)
 
-## 5. `needs_review` entries (12)
+## 5. Review status
 
-| id | Name | Why |
+### 5.1 `needs_review` entries: cleared
+
+All 12 entries originally flagged `needs_review` were reviewed and confirmed by the owner on 2026-10-09 (record: `docs/glossary_needs_review.md`). No definition, formula, methodology or notes text was changed; only the status.
+
+| id | Name | Why it was flagged | New status |
+|---|---|---|---|
+| league_position | Position | no current doc; tie-break is Points → GD → GF, with no head-to-head | ok |
+| season_record | Season Record | no current doc | ok |
+| last_5_form | Last 5 | no current doc | ok |
+| goal_difference | Goal Diff. | no current doc | ok |
+| points_per_game | PPG | no current doc (colour thresholds 2.00 / 1.30 undocumented) | ok |
+| mean_age | Mean Age | only the LEGACY `_archive/MEAN_AGE_KPI_IMPLEMENTATION.md`; external Transfermarkt value | ok |
+| starts | Starts | Team Overview variant (formation panel) only in LEGACY `match-report.md` | ok |
+| lineup_minutes | Minutes | only in LEGACY `match-report.md` | ok |
+| lineup_avg_minutes | Avg Min | only in LEGACY `match-report.md` | ok |
+| pressing_tier | Pressing Tier | tier thresholds (80/60/40/20 percentile of PPDA rank) undocumented | ok |
+| immediate_press_rate | Immediate Press ≤5s | not in any doc; season value is a mean of match rates | **pending_fix** (§5.2) |
+| organised_drop_rate | Organised Drop >10s | not in any doc; season value is a mean of match rates | **pending_fix** (§5.2) |
+
+Nine of them have no methodology document (`source_doc` is `null`): `league_position`, `season_record`, `last_5_form`, `goal_difference`, `points_per_game`, `mean_age`, `lineup_minutes`, `lineup_avg_minutes`, `pressing_tier`. They are allowlisted explicitly in `test_glossary_registry.py` (`NO_SOURCE_DOC`, "code-derived, no methodology doc; reviewed by owner on 2026-10-09"); every other entry still needs a current `source_doc`.
+
+### 5.2 `pending_fix` entries (5)
+
+New status. The definition is correct, but a known code issue will change the value; the card shows a "definition may change" badge. All five belong to the open season-aggregation finding (§1 finding 4, §6.A): the season value is the mean of per-match values, not a ratio of sums. Their methodology keeps the "Season aggregate (code reference)" paragraph until the fix lands.
+
+| id | Name | Season aggregation | Reason |
+|---|---|---|---|
+| `possession_pct` | Possession % | mean_of_match_values | season value = mean of per-match possession % (`precompute_serie_a.py:594`) |
+| `tempo` | Tempo | mean_of_match_values | season value = mean of per-match passes/min (`precompute_serie_a.py:596`) |
+| `immediate_press_rate` | Immediate Press ≤5s | mean_of_match_values | season value = mean of per-match rates (`precompute_serie_a.py:1491-1494`) |
+| `organised_drop_rate` | Organised Drop >10s | mean_of_match_values | season value = mean of per-match rates (`precompute_serie_a.py:1491-1494`) |
+| `ps_possession` | Possession (wheel P3) | rank_percentile | raw P3 = `ft_possession_pct`, the same per-match mean as Possession %; fixing that changes this percentile |
+
+### 5.3 Other open findings (status unchanged, still pending)
+
+These entries are affected by other open findings. Their status stays `ok`; the issue is described in their notes or methodology.
+
+| Finding | Entries | Where |
 |---|---|---|
-| league_position | Position | no current doc; tie-break is Points → GD → GF, with no head-to-head |
-| season_record | Season Record | no current doc |
-| last_5_form | Last 5 | no current doc |
-| goal_difference | Goal Diff. | no current doc |
-| points_per_game | PPG | no current doc (colour thresholds 2.00 / 1.30 undocumented) |
-| mean_age | Mean Age | only the LEGACY `_archive/MEAN_AGE_KPI_IMPLEMENTATION.md`; external Transfermarkt value |
-| starts | Starts | Team Overview variant (formation panel) only in LEGACY `match-report.md` |
-| lineup_minutes | Minutes | only in LEGACY `match-report.md` |
-| lineup_avg_minutes | Avg Min | only in LEGACY `match-report.md` |
-| pressing_tier | Pressing Tier | tier thresholds (80/60/40/20 percentile of PPDA rank) undocumented |
-| immediate_press_rate | Immediate Press ≤5s | not in any doc; season value is a mean of match rates |
-| organised_drop_rate | Organised Drop >10s | not in any doc; season value is a mean of match rates |
-
-All 12 have a methodology written from the code.
+| Wheel D1 Chance Prevention includes penalties and is per match (§1 finding 2, §6.B 2) | `ps_chance_prevention` | `playing_style.py:248-249` |
+| Wheel A1 per match, not per 90; Style Evolution labels A1–A3 rotated (§1 findings 2-3, §6.B 3) | `ps_chance_creation`, `ps_patient_attack`, `ps_shot_quality` | `playing_style_evolution_cards.py:44-46` |
+| Opponent own goals counted as shots (§1 finding 5, §6.C) | `total_shots`, `shots_in_box`, `sot_pct`, `xg_per_shot`, `team_goals`, `chain_to_goal_matrix`, `shot_quality_tiers`, `ps_patient_attack`, `ps_shot_quality` | chance creation shot list |
+| Season corner Goals include own goals; the doc says excluded (§6.C) | `corner_goals` (and `corner_conversion_rate`, same outcome rule) | `corner_kicks._corner_outcome` |
 
 ## 6. Doc-vs-code and UI-vs-code discrepancies
 
@@ -235,7 +263,7 @@ Related, but not ratio violations:
 
 ## 7. UI metrics with no current documentation
 
-The 12 `needs_review` entries (§5). Two more are documented only in part:
+The 9 code-derived entries allowlisted in §5.1 (all reviewed and confirmed by the owner). Two more are documented only in part:
 - **Team Overview Points Progression** is covered only briefly, in `ppda-team-overview.md` §3.4.
 - **Opponent Analysis Player Analysis** squad-overview columns (Apps, Min%, σ PVA, Adj /90, Raw /90) are described in code docstrings more than in the doc.
 
@@ -731,18 +759,18 @@ The 12 `needs_review` entries (§5). Two more are documented only in part:
 
 | id | Name | Sections | Status | Season aggregation | Source doc |
 |---|---|---|---|---|---|
-| `league_position` | Position | TO | needs_review | sum | — |
-| `season_record` | Season Record | TO | needs_review | sum | — |
-| `last_5_form` | Last 5 | TO | needs_review | sum | — |
-| `goal_difference` | Goal Diff. | TO | needs_review | sum | — |
-| `points_per_game` | PPG | TO | needs_review | ratio_of_sums | — |
-| `mean_age` | Mean Age | TO | needs_review | external | — |
+| `league_position` | Position | TO | ok | sum | — |
+| `season_record` | Season Record | TO | ok | sum | — |
+| `last_5_form` | Last 5 | TO | ok | sum | — |
+| `goal_difference` | Goal Diff. | TO | ok | sum | — |
+| `points_per_game` | PPG | TO | ok | ratio_of_sums | — |
+| `mean_age` | Mean Age | TO | ok | external | — |
 | `points_progression` | Points Progression | TO | ok | sum | team-overview/ppda-team-overview.md |
 | `formation_times_used` | Times Used | TO | ok | sum | team-overview/formation-analysis.md |
 | `formation_share` | Share | TO | ok | ratio_of_sums | team-overview/formation-analysis.md |
-| `starts` | Starts | TO, OA | needs_review | sum | opponent-analysis/player-analysis/player-analysis.md |
-| `lineup_minutes` | Minutes | TO | needs_review | sum | — |
-| `lineup_avg_minutes` | Avg Min | TO | needs_review | ratio_of_sums | — |
+| `starts` | Starts | TO, OA | ok | sum | opponent-analysis/player-analysis/player-analysis.md |
+| `lineup_minutes` | Minutes | TO | ok | sum | — |
+| `lineup_avg_minutes` | Avg Min | TO | ok | ratio_of_sums | — |
 | `goals_scored` | Goals Scored | TO | ok | sum | team-overview/goal-distribution.md |
 | `goals_conceded` | Goals Conceded | TO, MA, OA | ok | total_per_match | match-analysis/defensive-phase/chance-conceded.md |
 | `xg_for` | xG | TO | ok | sum | team-overview/xg-summary.md |
@@ -754,7 +782,7 @@ The 12 `needs_review` entries (§5). Two more are documented only in part:
 | `ps_high_line` | High Line | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
 | `ps_deep_buildup` | Deep Build-up | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
 | `ps_press_resistance` | Press Resistance | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
-| `ps_possession` | Possession | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
+| `ps_possession` | Possession | TO | pending_fix | rank_percentile | team-overview/playing-style-wheel.md |
 | `ps_central_progression` | Central Progression | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
 | `ps_circulate` | Circulate | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
 | `ps_field_tilt` | Field Tilt | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
@@ -764,7 +792,7 @@ The 12 `needs_review` entries (§5). Two more are documented only in part:
 | `ppda_team_overview` | PPDA | TO | ok | season_events | team-overview/ppda-team-overview.md |
 | `ppda_rank` | PPDA Rank | TO | ok | rank_percentile | team-overview/ppda-team-overview.md |
 | `field_tilt_pct` | Field Tilt % | TO | ok | ratio_of_sums | team-overview/ppda-team-overview.md |
-| `pressing_tier` | Pressing Tier | TO | needs_review | rank_percentile | — |
+| `pressing_tier` | Pressing Tier | TO | ok | rank_percentile | — |
 | `matches_analysed` | Matches | OA | ok | sum | opponent-analysis/offensive-phase/opp-season-goalkeeper-buildup.md |
 | `gk_possessions` | GK Possessions | MA, OA | ok | total_per_match | match-analysis/offensive-phase/goalkeeper-buildup.md |
 | `gk_short_pct` | Short Pass % | MA, OA | ok | ratio_of_sums | match-analysis/offensive-phase/goalkeeper-buildup.md |
@@ -779,14 +807,14 @@ The 12 `needs_review` entries (§5). Two more are documented only in part:
 | `gk_n2_box_entry_conceded` | Box Entry Conceded | MA, OA | ok | sum | match-analysis/offensive-phase/goalkeeper-buildup.md |
 | `gk_n3_shot_conceded` | Shot Conceded | MA, OA | ok | sum | match-analysis/offensive-phase/goalkeeper-buildup.md |
 | `gk_first_receiver_zones` | First Receiver Zone Distribution | MA, OA | ok | sum | match-analysis/offensive-phase/goalkeeper-buildup.md |
-| `possession_pct` | Possession % | MA, OA | ok | mean_of_match_values | match-analysis/offensive-phase/buildup-final-third.md |
+| `possession_pct` | Possession % | MA, OA | pending_fix | mean_of_match_values | match-analysis/offensive-phase/buildup-final-third.md |
 | `possession_by_time_period` | POSSESSION BY TIME PERIOD | MA | ok | — | match-analysis/offensive-phase/buildup-final-third.md |
 | `possession_by_pitch_area` | POSSESSION BY PITCH AREA | MA | ok | — | match-analysis/offensive-phase/buildup-final-third.md |
 | `qualifying_possessions` | Qualifying Poss. | MA | ok | — | match-analysis/offensive-phase/buildup-final-third.md |
 | `ft_entries_total` | Total FT Entries | MA | ok | — | match-analysis/offensive-phase/buildup-final-third.md |
 | `ft_entries_qualifying` | Qual. FT Entries | MA | ok | sum | match-analysis/offensive-phase/buildup-final-third.md |
 | `opp_box_touches` | Opp. Box Touches | MA, OA | ok | total_per_match | match-analysis/offensive-phase/buildup-final-third.md |
-| `tempo` | Tempo | MA, OA | ok | mean_of_match_values | match-analysis/offensive-phase/buildup-final-third.md |
+| `tempo` | Tempo | MA, OA | pending_fix | mean_of_match_values | match-analysis/offensive-phase/buildup-final-third.md |
 | `ft_entry_corridor` | Entry by Corridor | MA, OA | ok | ratio_of_sums | match-analysis/offensive-phase/buildup-final-third.md |
 | `ft_entry_method` | How — Entry Method | MA, OA | ok | ratio_of_sums | match-analysis/offensive-phase/buildup-final-third.md |
 | `ft_top_method` | Top Method | OA | ok | ratio_of_sums | opponent-analysis/offensive-phase/opp-season-buildup-final-third.md |
@@ -860,8 +888,8 @@ The 12 `needs_review` entries (§5). Two more are documented only in part:
 | `def_n1_sustained` | N1 — Sustained | MA, OA | ok | sum | match-analysis/transitions/defensive-transitions.md |
 | `def_n2_threatening` | N2 — Threatening | MA, OA | ok | sum | match-analysis/transitions/defensive-transitions.md |
 | `def_n3_dangerous` | N3 — Dangerous | MA, OA | ok | sum | match-analysis/transitions/defensive-transitions.md |
-| `immediate_press_rate` | Immediate Press ≤5s | MA, OA | needs_review | mean_of_match_values | match-analysis/transitions/defensive-transitions.md |
-| `organised_drop_rate` | Organised Drop >10s | MA, OA | needs_review | mean_of_match_values | match-analysis/transitions/defensive-transitions.md |
+| `immediate_press_rate` | Immediate Press ≤5s | MA, OA | pending_fix | mean_of_match_values | match-analysis/transitions/defensive-transitions.md |
+| `organised_drop_rate` | Organised Drop >10s | MA, OA | pending_fix | mean_of_match_values | match-analysis/transitions/defensive-transitions.md |
 | `def_outcomes_by_zone` | Outcomes by Zone | MA, OA | ok | sum | match-analysis/transitions/defensive-transitions.md |
 | `def_outcomes_by_corridor` | Outcomes by Corridor | MA, OA | ok | sum | match-analysis/transitions/defensive-transitions.md |
 | `def_transition_origins` | Transition Loss Origins (Qualified · Middle + Attacking Third) | MA, OA | ok | sum | opponent-analysis/transitions/opp-season-defensive-transitions.md |

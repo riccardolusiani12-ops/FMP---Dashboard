@@ -1,5 +1,7 @@
 # Glossary `needs_review` entries (12)
 
+**Reviewed and confirmed by owner on 2026-10-09; entries promoted (see glossary_review.md).**
+
 > Read-only package for review. Generated from the registry on `feature/glossary-page` (base `44b7c1f`). No entry was changed.
 > Registry files are under `dash_app/src/glossary/`. Code locations are where each methodology was derived from.
 > Answer per entry: **yes** (promote to `ok`), or the correction to apply.

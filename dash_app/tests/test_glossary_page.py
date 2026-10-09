@@ -98,12 +98,15 @@ def test_ppda_callouts_at_layer_one():
 
 
 def test_status_badges_and_pending_fix_support():
-    review = next(m for m in METRICS if m["status"] == "needs_review")
-    assert "under review" in _text(gc.build_card(review, review["sections"][0]))
+    for m in METRICS:
+        for section in m["sections"]:
+            assert "under review" not in _text(gc.build_card(m, section)), m["id"]
+    pending = next(m for m in METRICS if m["status"] == "pending_fix")
+    assert "definition may change" in _text(gc.build_card(pending, pending["sections"][0]))
     ok = next(m for m in METRICS if m["status"] == "ok")
-    assert "under review" not in _text(gc.build_card(ok, ok["sections"][0]))
-    pending = dict(ok, status="pending_fix")          # renderer readiness only
-    assert "definition may change" in _text(gc.build_card(pending, ok["sections"][0]))
+    assert "definition may change" not in _text(gc.build_card(ok, ok["sections"][0]))
+    review = dict(ok, status="needs_review")          # renderer readiness only
+    assert "under review" in _text(gc.build_card(review, ok["sections"][0]))
 
 
 def test_variants_render_labelled_by_section():

@@ -83,6 +83,16 @@ def test_variants_are_well_formed(entry):
         assert v["name"].strip() and v["definition"].strip()
 
 
+def test_review_status():
+    assert not [m["id"] for m in METRICS if m["status"] == "needs_review"]
+    # Known season-aggregation deviation (mean of per-match values), fix pending.
+    assert {m["id"] for m in METRICS if m["status"] == "pending_fix"} == {
+        "possession_pct", "tempo", "ps_possession",
+        "immediate_press_rate", "organised_drop_rate",
+    }
+    assert "pending_fix" in STATUSES
+
+
 def test_name_is_unique_within_each_module():
     seen = {}
     for m in METRICS:
@@ -94,12 +104,22 @@ def test_name_is_unique_within_each_module():
 
 # ── Source docs ───────────────────────────────────────────────────────────────
 
+# code-derived, no methodology doc; reviewed by owner on 2026-10-09
+NO_SOURCE_DOC = {
+    "league_position", "season_record", "last_5_form", "goal_difference",
+    "points_per_game", "mean_age", "lineup_minutes", "lineup_avg_minutes",
+    "pressing_tier",
+}
+
+
 @pytest.mark.parametrize("entry", METRICS, ids=_ids(METRICS))
 def test_source_doc_exists_and_is_current(entry):
     doc = entry["source_doc"]
     if doc is None:
-        assert entry["status"] == "needs_review", "undocumented entries must be flagged"
+        assert entry["status"] == "needs_review" or entry["id"] in NO_SOURCE_DOC, \
+            "undocumented entries must be flagged or explicitly allowlisted"
         return
+    assert entry["id"] not in NO_SOURCE_DOC, "allowlisted entry now has a doc; drop it from NO_SOURCE_DOC"
     assert (REPO_ROOT / doc).is_file(), doc
     assert doc not in LEGACY_DOCS
     assert not doc.startswith(LEGACY_DOC_PREFIXES)

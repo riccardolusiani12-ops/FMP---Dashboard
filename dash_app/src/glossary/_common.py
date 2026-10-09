@@ -17,7 +17,7 @@ from typing import Optional
 
 SECTIONS = ("team_overview", "match_analysis", "opponent_analysis")
 READINGS = ("higher_better", "lower_better", "contextual")
-STATUSES = ("ok", "needs_review")
+STATUSES = ("ok", "needs_review", "pending_fix")
 
 # How a value shown at season level is built from match-level data.
 #   sum                  — season total of a count

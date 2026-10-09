@@ -62,7 +62,6 @@ ENTRIES: list[dict] = [
         ),
         notes="No current methodology document covers the standings KPIs.",
         source_doc=None,
-        status="needs_review",
         season_aggregation="sum",
     ),
     metric(
@@ -82,7 +81,6 @@ ENTRIES: list[dict] = [
         ),
         notes="No current methodology document covers the standings KPIs.",
         source_doc=None,
-        status="needs_review",
         season_aggregation="sum",
     ),
     metric(
@@ -103,7 +101,6 @@ ENTRIES: list[dict] = [
         ),
         notes="No current methodology document covers the standings KPIs.",
         source_doc=None,
-        status="needs_review",
         season_aggregation="sum",
     ),
     metric(
@@ -123,7 +120,6 @@ ENTRIES: list[dict] = [
         ),
         notes="No current methodology document covers the standings KPIs.",
         source_doc=None,
-        status="needs_review",
         season_aggregation="sum",
     ),
     metric(
@@ -144,7 +140,6 @@ ENTRIES: list[dict] = [
         ),
         notes="No current methodology document covers the standings KPIs.",
         source_doc=None,
-        status="needs_review",
         season_aggregation="ratio_of_sums",
     ),
     metric(
@@ -171,7 +166,6 @@ ENTRIES: list[dict] = [
             "not verified here."
         ),
         source_doc=None,
-        status="needs_review",
         season_aggregation="external",
     ),
     # ── Points progression ───────────────────────────────────────────────────
@@ -280,7 +274,6 @@ ENTRIES: list[dict] = [
             "match-report.md (§3.3)."
         ),
         source_doc=D_PLAYER,
-        status="needs_review",
         season_aggregation="sum",
     ),
     metric(
@@ -300,7 +293,6 @@ ENTRIES: list[dict] = [
         ),
         notes="Only described in the LEGACY match-report.md (§3.3).",
         source_doc=None,
-        status="needs_review",
         season_aggregation="sum",
     ),
     metric(
@@ -320,7 +312,6 @@ ENTRIES: list[dict] = [
         ),
         notes="Only described in the LEGACY match-report.md (§3.3).",
         source_doc=None,
-        status="needs_review",
         season_aggregation="ratio_of_sums",
     ),
     # ── Goals & xG ───────────────────────────────────────────────────────────
@@ -623,6 +614,7 @@ ENTRIES: list[dict] = [
         ),
         source_doc=D_WHEEL,
         season_aggregation="rank_percentile",
+        status="pending_fix",
     ),
     metric(
         id="ps_central_progression",
@@ -853,7 +845,6 @@ ENTRIES: list[dict] = [
         ),
         notes="No methodology document describes the tier thresholds.",
         source_doc=None,
-        status="needs_review",
         season_aggregation="rank_percentile",
     ),
 ]

@@ -316,6 +316,7 @@ ENTRIES: list[dict] = [
         notes="Time between events, not a ball-in-play clock; stoppages inside a possession count.",
         source_doc=D_FT,
         season_aggregation="mean_of_match_values",
+        status="pending_fix",
     ),
     metric(
         id="possession_by_time_period",
@@ -457,6 +458,7 @@ ENTRIES: list[dict] = [
         notes="The time span is the whole match window between those passes, not the possessions' own duration.",
         source_doc=D_FT,
         season_aggregation="mean_of_match_values",
+        status="pending_fix",
     ),
     metric(
         id="ft_entry_corridor",

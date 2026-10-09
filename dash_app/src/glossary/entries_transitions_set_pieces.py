@@ -326,7 +326,7 @@ ENTRIES: list[dict] = [
         ),
         source_doc=D_DEF_TRANS,
         season_aggregation="mean_of_match_values",
-        status="needs_review",
+        status="pending_fix",
         notes="Not described in the defensive-transitions methodology docs.",
     ),
     metric(
@@ -349,7 +349,7 @@ ENTRIES: list[dict] = [
         ),
         source_doc=D_DEF_TRANS,
         season_aggregation="mean_of_match_values",
-        status="needs_review",
+        status="pending_fix",
         notes="Not described in the defensive-transitions methodology docs.",
     ),
     metric(
