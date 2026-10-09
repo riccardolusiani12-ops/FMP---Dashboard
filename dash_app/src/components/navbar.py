@@ -3,7 +3,7 @@ Top navigation bar component — Calcio Italiano.
 """
 
 import dash_bootstrap_components as dbc
-from dash import html
+from dash import dcc, html
 
 from src.config import APP_TITLE
 
@@ -38,6 +38,19 @@ def create_navbar() -> html.Nav:
                         html.A("Home", href="/", className="nav-link"),
                         html.A("Team Overview", href="/serie-a", className="nav-link"),
                         html.A("Team Analysis", href="/team-analysis", className="nav-link"),
+
+                        # Metric glossary — client-side navigation (same tab,
+                        # no reload, so the session theme store is kept)
+                        dcc.Link(
+                            [
+                                html.I(className="bi bi-info-circle", style={"fontSize": "0.95rem"}),
+                                html.Span("Metric glossary", className="visually-hidden"),
+                            ],
+                            id="glossary-nav-link",
+                            href="/glossary",
+                            className="theme-toggle-btn glossary-nav-btn",
+                            title="Metric glossary",
+                        ),
 
                         # Theme toggle button
                         html.Button(

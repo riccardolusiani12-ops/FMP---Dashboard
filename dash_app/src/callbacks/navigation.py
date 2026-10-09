@@ -8,6 +8,7 @@ from urllib.parse import urlparse, parse_qs
 
 from dash import Input, Output, html, dcc
 from src.pages import home, serie_a, team_detail, match_analysis, pre_match, post_match
+from src.pages import glossary  # also registers the glossary callbacks (dash.callback)
 from src.team_mapping import team_from_slug
 from src.config import AVAILABLE_SEASONS
 
@@ -61,6 +62,10 @@ def register_navigation_callbacks(app):
         # Opponent Analysis (was pre-match)
         if pathname == "/team-analysis/opponent-analysis":
             return pre_match.layout()
+
+        # Metric glossary
+        if pathname == "/glossary":
+            return glossary.layout()
 
         # Legacy redirects (keep old URLs working)
         if pathname == "/match-analysis":

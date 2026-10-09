@@ -1,0 +1,465 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   METRIC GLOSSARY (/glossary) — scoped under .glossary-page
+   Built only on the theme variables (assets/styles.css :root / .light-theme),
+   so every element follows the dark/light toggle. No hardcoded colours.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Navbar entry point (reuses .theme-toggle-btn round button) ─────────── */
+.glossary-nav-btn {
+    text-decoration: none !important;
+    margin-left: 4px;
+}
+.glossary-nav-btn:hover {
+    transform: none;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.glossary-page .gl-header {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    padding: 1.4rem 1.5rem 0.4rem;
+    margin-bottom: 1.25rem;
+}
+
+/* ── Toolbar: search + chips + mobile index ─────────────────────────────── */
+.glossary-page .gl-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+.glossary-page .gl-search {
+    flex: 1 1 320px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0 0.75rem;
+    color: var(--text-secondary);
+}
+.glossary-page .gl-search-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    padding: 0.55rem 0;
+    font-size: 0.9rem;
+}
+.glossary-page .gl-search-input::placeholder {
+    color: var(--text-muted);
+}
+.glossary-page .gl-search:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+.glossary-page .gl-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.glossary-page .gl-chip {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.3rem 0.85rem;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.glossary-page .gl-chip:hover {
+    color: var(--text-primary);
+    border-color: var(--primary);
+}
+.glossary-page .gl-chip--active {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+    border-color: var(--primary);
+    color: var(--text-primary);
+}
+
+/* ── Layout: sticky index + content ─────────────────────────────────────── */
+.glossary-page .gl-layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+}
+.glossary-page .gl-content {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+.glossary-page .gl-index {
+    position: sticky;
+    top: 76px;
+    max-height: calc(100vh - 92px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 0.75rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+}
+.glossary-page .gl-index-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0 0.5rem 0.4rem;
+}
+.glossary-page .gl-index button {
+    background: transparent;
+    border: none;
+    text-align: left;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.glossary-page .gl-index button:hover {
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--text-primary);
+}
+.glossary-page .gl-index-sec {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 0.45rem 0.5rem 0.25rem;
+    margin-top: 0.35rem;
+}
+.glossary-page .gl-index-mod {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    padding: 0.25rem 0.5rem 0.25rem 1.1rem;
+}
+.glossary-page .gl-index-dim {
+    opacity: 0.35;
+}
+.glossary-page .gl-index-mobile {
+    display: none;
+}
+.glossary-page .gl-jump-btn {
+    background: transparent !important;
+    border: 1px solid var(--border-subtle) !important;
+    color: var(--text-primary) !important;
+    font-size: 0.85rem;
+}
+.glossary-page .dropdown-menu {
+    --bs-dropdown-bg: var(--bg-dark);
+    --bs-dropdown-color: var(--text-primary);
+    --bs-dropdown-border-color: var(--border-light);
+    --bs-dropdown-link-color: var(--text-primary);
+    --bs-dropdown-link-hover-color: var(--text-primary);
+    --bs-dropdown-link-hover-bg: color-mix(in srgb, var(--primary) 12%, transparent);
+    --bs-dropdown-link-active-bg: var(--primary);
+    max-height: 60vh;
+    overflow-y: auto;
+    min-width: min(340px, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+}
+.glossary-page .dropdown-menu .gl-index-sec {
+    font-weight: 700;
+    white-space: normal;
+}
+.glossary-page .dropdown-menu .gl-index-mod {
+    padding-left: 1.75rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    white-space: normal;
+}
+
+/* ── Sections ───────────────────────────────────────────────────────────── */
+.glossary-page .gl-section,
+.glossary-page .gl-module {
+    scroll-margin-top: 76px;
+}
+.glossary-page .gl-sec-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+    color: var(--primary-light);
+}
+.glossary-page .gl-sec-title {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.glossary-page .gl-sec-count,
+.glossary-page .gl-mod-count {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    padding: 0.05rem 0.55rem;
+}
+.glossary-page .gl-module + .gl-module {
+    margin-top: 0.6rem;
+}
+
+/* ── Accordion (one per module), themed through Bootstrap variables ─────── */
+.glossary-page .accordion {
+    --bs-accordion-bg: transparent;
+    --bs-accordion-color: var(--text-primary);
+    --bs-accordion-border-color: var(--border-subtle);
+    --bs-accordion-border-radius: var(--radius-sm);
+    --bs-accordion-inner-border-radius: var(--radius-sm);
+    --bs-accordion-btn-color: var(--text-primary);
+    --bs-accordion-btn-bg: transparent;
+    --bs-accordion-active-color: var(--text-primary);
+    --bs-accordion-active-bg: color-mix(in srgb, var(--primary) 10%, transparent);
+    --bs-accordion-btn-focus-box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent);
+    --bs-accordion-btn-padding-y: 0.7rem;
+    --bs-accordion-body-padding-y: 0.9rem;
+}
+.glossary-page .accordion-button {
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+.glossary-page .accordion-button::after,
+.glossary-page .accordion-button:not(.collapsed)::after {
+    background-image: none !important;
+    content: "\F282";                     /* bootstrap-icons chevron-down */
+    font-family: "bootstrap-icons";
+    font-size: 0.85rem;
+    line-height: var(--bs-accordion-btn-icon-width, 1.25rem);
+    text-align: center;
+    color: var(--text-secondary);
+}
+.glossary-page .gl-mod-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+.glossary-page .accordion-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+    gap: 0.85rem;
+}
+
+/* ── Metric card ────────────────────────────────────────────────────────── */
+.glossary-page .gl-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.glossary-page .gl-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem 0.75rem;
+}
+.glossary-page .gl-card-name {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.glossary-page .gl-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+.glossary-page .gl-badge {
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--border-light);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.glossary-page .gl-badge--current {
+    border-color: var(--border-subtle);
+    color: var(--text-secondary);
+}
+.glossary-page .gl-badge--review {
+    border-color: var(--primary-light);
+    color: var(--primary-light);
+    font-style: italic;
+}
+.glossary-page .gl-badge--pending {
+    border-style: dashed;
+    border-color: var(--text-muted);
+    color: var(--text-secondary);
+}
+.glossary-page .gl-def {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--text-primary);
+    line-height: 1.45;
+}
+.glossary-page .gl-callout {
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-start;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    border-left: 3px solid var(--primary);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.7rem;
+}
+.glossary-page .gl-callout i {
+    color: var(--primary-light);
+    margin-top: 1px;
+}
+.glossary-page .gl-variants {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.glossary-page .gl-variant {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.glossary-page .gl-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.glossary-page .gl-chip-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.5rem;
+    max-width: 100%;
+}
+.glossary-page .gl-chip-formula code {
+    color: var(--text-primary);
+    background: transparent;
+    font-size: 0.74rem;
+    white-space: normal;
+}
+.glossary-page .gl-reading--higher_better i,
+.glossary-page .gl-reading--lower_better i {
+    color: var(--primary-light);
+}
+.glossary-page .gl-reading-note {
+    margin: 0;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+}
+.glossary-page .gl-more-btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--primary-light);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.glossary-page .gl-more-btn:hover {
+    text-decoration: underline;
+}
+
+/* ── Layer 2 ────────────────────────────────────────────────────────────── */
+.glossary-page .gl-detail {
+    border-top: 1px solid var(--border-light);
+    padding-top: 0.65rem;
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.glossary-page .gl-markdown p,
+.glossary-page .gl-markdown li {
+    margin-bottom: 0.45rem;
+    line-height: 1.5;
+}
+.glossary-page .gl-markdown strong {
+    color: var(--text-primary);
+}
+.glossary-page .gl-markdown code,
+.glossary-page .gl-detail code {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    border-radius: 4px;
+    padding: 0 0.25rem;
+    white-space: normal;
+}
+.glossary-page .gl-markdown pre {
+    white-space: pre-wrap;
+}
+.glossary-page .gl-detail-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+.glossary-page .gl-detail-label {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.glossary-page .gl-detail-row .gl-markdown {
+    flex-basis: 100%;
+}
+.glossary-page .gl-detail-key {
+    font-size: 0.7rem;
+}
+
+/* ── Filtering / empty state ────────────────────────────────────────────── */
+.glossary-page .gl-hidden {
+    display: none !important;
+}
+.glossary-page .gl-no-results {
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1.5rem;
+    color: var(--text-secondary);
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 991px) {
+    .glossary-page .gl-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .glossary-page .gl-index {
+        display: none;
+    }
+    .glossary-page .gl-index-mobile {
+        display: block;
+    }
+}
+@media (max-width: 540px) {
+    .glossary-page .gl-section {
+        padding: 1rem;
+    }
+    .glossary-page .accordion-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
