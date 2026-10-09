@@ -8,7 +8,7 @@ Provides:
   - compute_ppda()                → compute PPDA per team (league-wide)
   - compute_mean_seconds_to_regain() → pressing speed metric
   - build_ppda_bar_figure()       → ranked horizontal bar chart
-  - build_ppda_scatter_figure()   → PPDA vs regain seconds scatter
+  - build_ppda_scatter_figure()   → PPDA vs Field Tilt scatter
 
 Data source: Opta match-event CSVs under data/raw/serie_a_*/events/
 """
@@ -142,21 +142,12 @@ def load_season_events(season: str) -> pd.DataFrame:
     events = events.dropna(subset=["opponent"])
 
     # ── Compute x_from_own_goal ──────────────────────────────
-    def _own_goal_x(team_position: str, period_id: int) -> int:
-        tp = str(team_position).strip().lower()
-        p = int(period_id)
-        if p == 1:
-            return 0 if tp == "home" else 100
-        else:
-            return 100 if tp == "home" else 0
-
-    events["own_goal_x"] = [
-        _own_goal_x(tp, p)
-        for tp, p in zip(events["team_position"], events["period_id"])
-    ]
-    events["x_from_own_goal"] = np.where(
-        events["own_goal_x"] == 0, events["x"], 100 - events["x"]
-    )
+    # Opta event CSVs are team-relative: every team attacks towards x = 100
+    # in both halves, home or away, so raw x already is the distance from the
+    # team's own goal. No home/away or half-time flip (the absolute-frame flip
+    # copied from 05_ppda.ipynb mirrored away-P1 and home-P2 events).
+    events["own_goal_x"] = 0
+    events["x_from_own_goal"] = events["x"]
 
     # ── Add short display names ──────────────────────────────
     events["team_short"] = events["team_name"].map(_short_name)
@@ -350,6 +341,8 @@ def compute_field_tilt(events: pd.DataFrame) -> pd.DataFrame:
     
     Field Tilt (%) = (Team's Final Third Passes ÷ Total Final Third Passes) × 100
     Final Third = attacking third (x_from_own_goal > 66.67)
+    Season value = ratio of season sums (Σ team ÷ Σ team + opponent),
+    not the mean of per-match tilts.
 
     Returns DataFrame with columns:
         team, final_third_passes, field_tilt
@@ -374,40 +367,37 @@ def compute_field_tilt(events: pd.DataFrame) -> pd.DataFrame:
         .rename("final_third_passes")
     )
 
-    # ── 3) Total final third passes per match ────────────────
-    # This is needed to normalize per match
-    match_final_third_total = (
-        passes_final_third.groupby("match_id")
-        .size()
-        .rename("match_total")
-    )
-
-    # ── 4) Per-match field tilt ──────────────────────────────
+    # ── 3) Per-match counters for every team that played ─────
+    # Includes matches where the team had zero final-third passes, so the
+    # opponent's passes in those matches still count in its denominator.
+    team_matches = events[["team_name", "match_id"]].drop_duplicates()
     passes_final_third_match = (
         passes_final_third.groupby(["team_name", "match_id"])
         .size()
         .rename("match_passes")
         .reset_index()
     )
-
     match_totals_df = (
         passes_final_third.groupby("match_id")
         .size()
         .reset_index(name="match_total")
     )
-
-    field_tilt_match = passes_final_third_match.merge(
-        match_totals_df, on="match_id"
+    field_tilt_match = (
+        team_matches
+        .merge(passes_final_third_match, on=["team_name", "match_id"], how="left")
+        .merge(match_totals_df, on="match_id", how="left")
+        .fillna({"match_passes": 0, "match_total": 0})
     )
-    field_tilt_match["match_field_tilt"] = (
-        (field_tilt_match["match_passes"] / field_tilt_match["match_total"]) * 100
-    ).round(2)
 
-    # ── 5) Average field tilt across season ──────────────────
+    # ── 4) Season field tilt = ratio of sums ─────────────────
+    # Σ team FT passes ÷ Σ (team + opponent) FT passes. A match with no
+    # final-third passes adds 0 to both sums, i.e. contributes nothing.
+    sums = field_tilt_match.groupby("team_name")[["match_passes", "match_total"]].sum()
+    sums = sums[sums["match_total"] > 0]
     field_tilt_season = (
-        field_tilt_match.groupby("team_name")["match_field_tilt"]
-        .agg(field_tilt="mean")
+        (sums["match_passes"] / sums["match_total"] * 100)
         .round(2)
+        .rename("field_tilt")
     )
 
     # ── 6) Add total final third passes ──────────────────────
@@ -657,16 +647,16 @@ def build_ppda_scatter_figure(
     corners = {
         "bl": {"xanchor": "left",  "yanchor": "bottom",
                "color": ELITE_GREEN, "opacity": 0.8,
-               "text": "<b>Elite Pressing</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · Low Tilt</span>"},
+               "text": "<b>Aggressive Reactive Press</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · Low Tilt</span>"},
         "tr": {"xanchor": "right", "yanchor": "top",
                "color": WARN_RED, "opacity": 0.8,
-               "text": "<b>Passive Pressing</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · High Tilt</span>"},
+               "text": "<b>Possession Control</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · High Tilt</span>"},
         "br": {"xanchor": "right", "yanchor": "bottom",
                "color": "#FFA15A", "opacity": 0.55,
-               "text": "<b>Low Pressing Activity</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · High Tilt</span>"},
+               "text": "<b>Dominant High Press</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · High Tilt</span>"},
         "tl": {"xanchor": "left",  "yanchor": "top",
                "color": "#19D3F3", "opacity": 0.55,
-               "text": "<b>Defensive Focus</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · Low Tilt</span>"},
+               "text": "<b>Deep Block</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · Low Tilt</span>"},
     }
 
     # Quadrant bounds (data coordinates)

@@ -102,7 +102,7 @@ def gen_ppda():
     """PPDA trend line chart."""
     random.seed(77)
     matchdays = list(range(1, 39))
-    ppda_vals = [round(random.uniform(7, 14), 2) for _ in matchdays]
+    ppda_vals = [round(random.uniform(12, 30), 2) for _ in matchdays]
 
     fig = _plotly_fig(
         [
