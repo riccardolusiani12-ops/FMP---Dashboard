@@ -40,15 +40,6 @@ _TWO_PPDA = (
     "+ challenges*. The two numbers are not comparable."
 )
 
-_FRAME_ISSUE = (
-    "**Coordinate frame (code reference):** ppda.load_season_events() flips x "
-    "to `x_from_own_goal` using home/away and period, assuming absolute "
-    "coordinates. The raw Opta files are already team-relative (verified in the "
-    "Phase 0 audit), so for the away team in the first half and the home team "
-    "in the second half the frame is inverted. Reported in "
-    "docs/glossary_review.md; not changed."
-)
-
 
 ENTRIES: list[dict] = [
     # ── KPI row ──────────────────────────────────────────────────────────────
@@ -695,10 +686,7 @@ ENTRIES: list[dict] = [
             SEASON_RATIO,
             _WHEEL_PCT,
         ),
-        notes=(
-            "Different from the 'Field Tilt %' KPI in Pressing Intensity, which is "
-            "a mean of per-match tilts computed in a different coordinate frame."
-        ),
+        notes="Raw value equals the 'Field Tilt %' KPI in Pressing Intensity; the wheel shows its league percentile.",
         source_doc=D_WHEEL,
         season_aggregation="rank_percentile",
     ),
@@ -790,12 +778,13 @@ ENTRIES: list[dict] = [
             "outcome) made within 60 units of the opponent's own goal. "
             "Denominator: the pressing team's `ball recovery` events at ≥ 40 units "
             "from its own goal, i.e. in the same area. PPDA = passes ÷ recoveries, "
-            "2 dp; teams without recoveries are omitted.",
+            "2 dp; teams without recoveries are omitted. Raw Opta x is "
+            "team-relative (every team attacks towards x = 100 in both halves) "
+            "and is used as stored.",
             SEASON_RATIO,
             "Shown as the PPDA KPI (green below the league median, red above), "
             "the 'PPDA Ranking — Pressing Intensity' bar chart and the y-axis of "
             "'PPDA vs Field Tilt' (quadrants split at the league medians).",
-            _FRAME_ISSUE,
         ),
         notes=(
             "Not comparable with Match/Opponent Analysis PPDA (different "
@@ -828,26 +817,23 @@ ENTRIES: list[dict] = [
         name="Field Tilt %",
         sections=[TO],
         module={TO: PRESSING},
-        short_definition="The team's average share of the final-third passes played in its matches.",
-        formula="mean over matches of team final-third passes ÷ both teams' final-third passes × 100",
+        short_definition="The team's share of all final-third passes played in its matches over the season.",
+        formula="Σ team final-third passes ÷ Σ (team + opponent) final-third passes × 100",
         unit="%",
         reading="contextual",
         reading_note="Above 50% means the team plays more in the opponent's third than it concedes in its own.",
         methodology=md(
             "Per match: team passes with x_from_own_goal > 66.67 ÷ all such passes "
-            "by both teams × 100 (ppda.compute_field_tilt()). The season value is "
-            "the mean of these per-match tilts.",
-            SEASON_MEAN_DEVIATION,
+            "by both teams × 100 (ppda.compute_field_tilt()). The season value "
+            "sums the team's and both teams' final-third passes across all its "
+            "matches and divides once.",
+            SEASON_RATIO,
             "Shown as a KPI (green above the league median) and as the x-axis of "
             "'PPDA vs Field Tilt'.",
-            _FRAME_ISSUE,
         ),
-        notes=(
-            "Not the same number as the wheel's 'Field Tilt' (G3), which is a "
-            "ratio of season sums in the team-relative frame."
-        ),
+        notes="Same value as the wheel's 'Field Tilt' (G3) raw; the wheel shows it as a league percentile.",
         source_doc=D_PPDA_TO,
-        season_aggregation="mean_of_match_values",
+        season_aggregation="ratio_of_sums",
     ),
     metric(
         id="pressing_tier",

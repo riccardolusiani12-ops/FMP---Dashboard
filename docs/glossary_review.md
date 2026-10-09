@@ -12,16 +12,16 @@
 | UI metric labels inventoried | 430 rows (Team Overview 57 · Match Analysis 192 · Opponent Analysis 181) |
 | Labels explicitly unmapped (visuals, no metric) | 6 |
 | Entries flagged `needs_review` | 12 |
-| Season values that break the ratio-of-sums rule | 5 (reported, not fixed) |
+| Season values that break the ratio-of-sums rule | 4 (reported, not fixed; originally 5, Field Tilt % since fixed on main) |
 | Probable code defects found | 9 (reported, not fixed) |
 | New tests | 1,676 cases, all pass · existing suite 156/156 unchanged |
 
 **Most important findings (read these first)**
 
-1. **Team Overview PPDA and Field Tilt % use the wrong coordinate frame for half the events.** `ppda.load_season_events()` flips x by home/away and period (`ppda.py:145-159`), assuming absolute coordinates. The raw Opta files are already team-relative: in a sample match, the mean x of clearances is 9.8–15.4 for both teams in both halves (`data/raw/serie_a_2024_2025/events/10_Atalanta_Monza_*.csv`). For the away team in the first half and the home team in the second half, `x_from_own_goal` is inverted. Every other module (and `playing_style.py`, explicitly) treats x as team-relative.
+1. **FIXED on main (merge commit `5bb5600`, `fix/ppda-fieldtilt-frame`).** `load_season_events()` now uses raw x as stored, and the registry text is aligned (`_FRAME_ISSUE` removed). Original finding: **Team Overview PPDA and Field Tilt % use the wrong coordinate frame for half the events.** `ppda.load_season_events()` flips x by home/away and period (`ppda.py:145-159`), assuming absolute coordinates. The raw Opta files are already team-relative: in a sample match, the mean x of clearances is 9.8–15.4 for both teams in both halves (`data/raw/serie_a_2024_2025/events/10_Atalanta_Monza_*.csv`). For the away team in the first half and the home team in the second half, `x_from_own_goal` is inverted. Every other module (and `playing_style.py`, explicitly) treats x as team-relative.
 2. **Wheel D1 "Chance Prevention" is not non-penalty, and not per 90.** It reads `xg_conceded_per_match` (`playing_style.py:249`), which sums *all* conceded xG, penalties at 0.79 included (`precompute_serie_a.py:1219`), and divides by matches. A1 "Chance Creation" is also per match, not per 90.
 3. **Style Evolution mislabels A1–A3.** The labels are rotated: the chart titled "Patient Attack" plots A1 (npxG), "Shot Quality" plots A2, "Chance Creation" plots A3 (`playing_style_evolution_cards.py:44-46`).
-4. **Five season values average per-match rates** instead of summing numerators and denominators: Field Tilt %, Possession %, Tempo, Immediate Press, Organised Drop (§6.A).
+4. **Four season values average per-match rates** instead of summing numerators and denominators: Possession %, Tempo, Immediate Press, Organised Drop (§6.A). Field Tilt % was originally on this list; it is now a ratio of season sums (fixed on main in `5bb5600`).
 5. **Opponent own goals count as shots.** They are injected into the team's shot list as "Own Goal" rows, so they count in Total Shots, SoT %, the TOTAL column, the Chain-to-Goal Matrix, the season shots parquet and wheel A2/A3. This is not documented.
 
 ## 2. Phase 0 — Audit
@@ -162,7 +162,7 @@ In every case the registry follows the **code**; nothing was fixed.
 
 | Metric | Code | Where |
 |---|---|---|
-| Field Tilt % (Team Overview) | mean of per-match tilts | `ppda.py:409` |
+| ~~Field Tilt % (Team Overview)~~ | **FIXED on main (`5bb5600`)**: now Σ team ÷ Σ (team + opponent) final-third passes | `ppda.py:338-410` |
 | Possession % (Opponent Analysis; also wheel P3) | mean of per-match possession % | `precompute_serie_a.py:594` |
 | Tempo (Opponent Analysis) | mean of per-match passes/min | `precompute_serie_a.py:596` |
 | Immediate Press, Organised Drop (Opponent Analysis) | mean of per-match rates | `precompute_serie_a.py:1491-1494` |
@@ -173,7 +173,7 @@ Related, but not ratio violations:
 
 ### 6.B Probable code defects (report only)
 
-1. **Team Overview PPDA / Field Tilt % frame inversion.** See §1. `ppda.py:145-159`.
+1. **FIXED on main (`5bb5600`).** ~~Team Overview PPDA / Field Tilt % frame inversion.~~ See §1. `ppda.py:145-159`.
 2. **D1 includes penalties, and is per match.** The comment at `playing_style.py:248` ("xg_conceded already excludes pens") is wrong.
 3. **Style Evolution A1–A3 labels rotated.** `playing_style_evolution_cards.py:44-46`.
 4. **Offensive transitions: own foul counted as a penalty won.** A *team* foul committed (own row, outcome 0) inside the opponent box sets the P3 penalty flag (`offensive_transitions.py:409-413`).
@@ -763,7 +763,7 @@ The 12 `needs_review` entries (§5). Two more are documented only in part:
 | `ps_shot_quality` | Shot Quality | TO | ok | rank_percentile | team-overview/playing-style-wheel.md |
 | `ppda_team_overview` | PPDA | TO | ok | season_events | team-overview/ppda-team-overview.md |
 | `ppda_rank` | PPDA Rank | TO | ok | rank_percentile | team-overview/ppda-team-overview.md |
-| `field_tilt_pct` | Field Tilt % | TO | ok | mean_of_match_values | team-overview/ppda-team-overview.md |
+| `field_tilt_pct` | Field Tilt % | TO | ok | ratio_of_sums | team-overview/ppda-team-overview.md |
 | `pressing_tier` | Pressing Tier | TO | needs_review | rank_percentile | — |
 | `matches_analysed` | Matches | OA | ok | sum | opponent-analysis/offensive-phase/opp-season-goalkeeper-buildup.md |
 | `gk_possessions` | GK Possessions | MA, OA | ok | total_per_match | match-analysis/offensive-phase/goalkeeper-buildup.md |
