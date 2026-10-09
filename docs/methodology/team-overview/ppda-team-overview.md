@@ -18,8 +18,8 @@ The Team Overview PPDA gives a season-long, league-wide view of pressing intensi
 
 - **Event types used:** `is_pass` (event == "pass") for opponent passes; **`is_regain` (event == "ball recovery")** for the pressing-team denominator; passes in the final third for field tilt.
 - **Qualifiers used:** `outcome` (success), team_position (home/away resolution).
-- **Coordinate system:** Opta normalised, with `x_from_own_goal` reflected so each team's pressing is measured in a common frame. PPDA zone: passer `x_from_own_goal ≤ PPDA_ZONE_UPPER = 60`; regains at `x_from_own_goal ≥ PRESSING_ZONE_MIN = 40`. Field-third line 66.67.
-- **Seasons covered:** all (2021/22–2025/26).
+- **Coordinate system:** raw Opta x is team-relative (every team attacks towards x = 100 in both halves) and is used as stored (`x_from_own_goal = x`). PPDA zone: passer `x_from_own_goal ≤ PPDA_ZONE_UPPER = 60`; regains at `x_from_own_goal ≥ PRESSING_ZONE_MIN = 40`. Field-third line 66.67.
+- **Seasons covered:** all (2021/22–2026/27).
 - **Scope:** season-aggregate, all teams.
 
 ---
@@ -33,6 +33,8 @@ The Team Overview PPDA gives a season-long, league-wide view of pressing intensi
 
 ### 3.2 — Field tilt (`compute_field_tilt`)
 Field Tilt (%) = team's final-third passes ÷ total final-third passes (both teams) × 100, where the final third is `x_from_own_goal > 66.67`. It measures territorial dominance.
+
+- **Season value (ratio of sums):** Field Tilt = Σ team final-third passes ÷ Σ (team + opponent) final-third passes × 100 over all the team's matches; a match with no final-third passes contributes nothing. This is identical to the Playing Style Wheel's G3 raw value.
 
 ### 3.3 — League table & figures
 `build_ppda_table` ranks all teams (ascending PPDA = most intense first). `build_ppda_bar_figure` ranks teams by PPDA; `build_ppda_scatter_figure` plots two dimensions (e.g. PPDA vs. field tilt / another pressing axis) to position teams.

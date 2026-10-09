@@ -8,7 +8,7 @@ Provides:
   - compute_ppda()                → compute PPDA per team (league-wide)
   - compute_mean_seconds_to_regain() → pressing speed metric
   - build_ppda_bar_figure()       → ranked horizontal bar chart
-  - build_ppda_scatter_figure()   → PPDA vs regain seconds scatter
+  - build_ppda_scatter_figure()   → PPDA vs Field Tilt scatter
 
 Data source: Opta match-event CSVs under data/raw/serie_a_*/events/
 """
@@ -647,16 +647,16 @@ def build_ppda_scatter_figure(
     corners = {
         "bl": {"xanchor": "left",  "yanchor": "bottom",
                "color": ELITE_GREEN, "opacity": 0.8,
-               "text": "<b>Elite Pressing</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · Low Tilt</span>"},
+               "text": "<b>Aggressive Reactive Press</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · Low Tilt</span>"},
         "tr": {"xanchor": "right", "yanchor": "top",
                "color": WARN_RED, "opacity": 0.8,
-               "text": "<b>Passive Pressing</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · High Tilt</span>"},
+               "text": "<b>Possession Control</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · High Tilt</span>"},
         "br": {"xanchor": "right", "yanchor": "bottom",
                "color": "#FFA15A", "opacity": 0.55,
-               "text": "<b>Low Pressing Activity</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · High Tilt</span>"},
+               "text": "<b>Dominant High Press</b><br><span style='font-size:9px;color:#8899aa'>Low PPDA · High Tilt</span>"},
         "tl": {"xanchor": "left",  "yanchor": "top",
                "color": "#19D3F3", "opacity": 0.55,
-               "text": "<b>Defensive Focus</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · Low Tilt</span>"},
+               "text": "<b>Deep Block</b><br><span style='font-size:9px;color:#8899aa'>High PPDA · Low Tilt</span>"},
     }
 
     # Quadrant bounds (data coordinates)
