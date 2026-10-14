@@ -4,6 +4,7 @@ Loader di seasons.toml → oggetto Season con tutti i percorsi risolti.
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,15 @@ DASH_PYTHON = DASH_DIR / ".venv" / "bin" / "python"
 LOOKUPS_DIR = PIPELINE_DIR / "opta_lookups"
 LOGS_DIR = PIPELINE_DIR / "logs"
 SEASONS_FILE = PIPELINE_DIR / "seasons.toml"
+
+# Git usato da TUTTE le operazioni della pipeline. Solo l'helper osxkeychain
+# di /usr/bin/git (Apple) è autorizzato a leggere la credenziale GitHub nel
+# Portachiavi: il git di Homebrew, primo nel PATH di launchd, in background
+# fallisce con "failed to get: -25320". Sovrascrivibile con PIPELINE_GIT.
+GIT_BIN = Path(os.environ.get("PIPELINE_GIT", "/usr/bin/git"))
+
+# Worktree dedicato alla pubblicazione dei dati (gitignorato, sotto _work/).
+PUBLISH_WORKTREE = PIPELINE_DIR / "_work" / "publish"
 
 
 @dataclass(frozen=True)

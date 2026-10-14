@@ -3,7 +3,7 @@
 Automatizza l'aggiornamento della dash con le partite di Serie A appena giocate:
 
 ```
-API PerformFeeds ──► JSON ──► CSV ──► data/raw/serie_a_<stagione>/events/ ──► precompute ──► pytest ──► commit + push ──► Render
+API PerformFeeds ──► JSON ──► CSV ──► data/raw/serie_a_<stagione>/events/ ──► precompute ──► pytest ──► publish (worktree) ──► Render
 ```
 
 La pipeline ristruttura gli script originali della cartella `selenium wire` senza modificarli.
@@ -19,11 +19,12 @@ La logica di parsing e conversione è la stessa: `convert.py` produce CSV identi
   - Se il Mac era in stop, il run parte al risveglio.
   - Se era spento, parte al login, ma solo se il controllo della settimana non è ancora stato fatto (`--catch-up`).
   - Stato: `launchctl print gui/$(id -u)/com.ricki.calcioitaliano.weekly`.
-- **Notifiche** (titolo "Calcio Italiano"):
-  - ✅ partite caricate e pubblicate;
-  - ℹ️ nessuna nuova partita;
-  - ❌ errore;
-  - con "⚠️ … ripiego browser" se l'API non era disponibile.
+- **Notifiche** (titolo "Calcio Italiano"), con codice di uscita:
+  - ✅ nuove partite caricate e pubblicate, con lo SHA del commit di dati (uscita 0);
+  - ⚠️ nuove partite caricate in locale ma pubblicazione BLOCCATA, con il motivo (uscita 2);
+  - ℹ️ nessuna nuova partita (uscita 0);
+  - ❌ errore al passo N (uscita 1);
+  - in coda "⚠️ … ripiego browser" se l'API non era disponibile e "⏱️ lento: …" se un passo ha superato la soglia.
 - **Stato stagione 2026/27 al 30/09/2026:** GW1–5 (50 partite) caricate.
 
 ### Cosa fare se arriva una notifica ❌
@@ -35,13 +36,14 @@ La notifica indica il passo e il motivo; il sottotitolo è il nome del log in `p
 
    | Passo | Causa tipica | Cosa fare |
    |---|---|---|
-   | 0 | Branch diverso da `main`, file in staging, modifiche non committate in `data/ready`, `data/processed` o `xg_model.pkl` | Sistema lo stato di git (`git status`), poi rilancia |
+   | 0 | `/usr/bin/git` assente, oppure file dati locali diversi da `origin/main` che non vengono dalla pipeline (es. dati rigenerati a mano o commit di dati non pushati) | Allinea `data/` (pull o checkout), poi rilancia |
    | 1, 4 | Rete assente o API PerformFeeds giù (e ripiego fallito) | Riprova più tardi; se persiste, prova l'API a mano (sezione "Aggiungere una stagione") |
    | 5, 6 | Formato Opta cambiato, squadra sconosciuta (neopromossa), colonne diverse | Leggi il dettaglio; per una squadra nuova aggiorna `team_mapping.py` (vedi sotto) |
    | 8 | Errore nel precompute, parquet non rigenerati | Guarda il traceback nel log; lancia a mano `cd dash_app && .venv/bin/python -m src.analytics.precompute_serie_a <stagione>` |
    | 9 | Test falliti | `cd dash_app && .venv/bin/python -m pytest -q` per vedere quali |
-   | 10 | "commit non riuscito" | Controlla `git status` |
-   | 10 | "push fallito, commit locale in sospeso" | Di solito sono credenziali GitHub scadute nel Portachiavi: fai un `git push` a mano da terminale. Altrimenti il run successivo ritenta da solo |
+   | 10 (⚠️) | "credenziale GitHub non disponibile" | Vedi [Pubblicazione](#pubblicazione-passo-10): la credenziale deve essere leggibile da `/usr/bin/git`. Poi `--publish-only` |
+   | 10 (⚠️) | "rebase del commit di dati fallito" | Qualcuno ha cambiato su `origin/main` gli stessi file dati: allinea e rilancia `--publish-only` |
+   | 10 (⚠️) | "parquet non previsti dalla whitelist" | Il precompute produce una famiglia nuova: aggiungila a `SEASON_FAMILIES` in `publish.py` |
 
 3. **Rilancia a mano** dalla root del repo: `dash_app/.venv/bin/python pipeline/run_weekly.py --dry-run`, poi senza opzioni.
 4. **Controlla l'app** su https://fmp-dashboard.onrender.com una volta completato il deploy.
@@ -86,9 +88,11 @@ Non usare `selenium-wire`: è incompatibile con `blinker>=1.8`, richiesto da Fla
 Dalla root del repo:
 
 ```bash
-dash_app/.venv/bin/python pipeline/run_weekly.py --dry-run          # fino ai controlli di qualità: niente copia né commit
-dash_app/.venv/bin/python pipeline/run_weekly.py --no-push          # tutto, commit locale senza push
+dash_app/.venv/bin/python pipeline/run_weekly.py --dry-run          # fino ai controlli di qualità + anteprima pubblicazione: niente copia, commit né push
+dash_app/.venv/bin/python pipeline/run_weekly.py --no-push          # tutto, commit di dati nel worktree senza push
 dash_app/.venv/bin/python pipeline/run_weekly.py                    # tutto, con push su origin main
+dash_app/.venv/bin/python pipeline/run_weekly.py --publish-only     # solo pubblicazione dei dati locali già pronti (ritento)
+dash_app/.venv/bin/python pipeline/run_weekly.py --prepare-pull     # prepara il working tree a un normale git pull (vedi sotto)
 dash_app/.venv/bin/python pipeline/run_weekly.py --season 2026/27   # stagione esplicita (default: current_season)
 ```
 
@@ -98,10 +102,10 @@ Opzioni pensate per launchd:
 
 ### Passi di `run_weekly.py`
 
-0. Verifiche preliminari (non in `--dry-run`): branch `main`, niente in staging, nessuna modifica non committata in `data/ready`, `data/processed`, `data/match_events` o `data/cache/xg_model.pkl`.
+0. Verifiche preliminari: `/usr/bin/git` presente; i file dati tracciati su disco coincidono con `origin/main`, a parte quelli prodotti dalla pipeline e non ancora pubblicati (`_work/.pending_publish.json`). Branch corrente, commit locali di codice e modifiche al codice **non** contano.
 1. Elenco partite della stagione: sono "giocate" quelle con `matchStatus == Played`.
 2. Confronto dei `match_id` con i CSV già in `data/raw/serie_a_<stagione>/events/`.
-3. Se non manca nulla: notifica "nessuna nuova partita" e fine. Se ci sono commit della pipeline non pushati per un push fallito in precedenza, vengono pubblicati qui.
+3. Se non manca nulla: ritenta la pubblicazione (idempotente: senza differenze nessun commit né push), notifica "nessuna nuova partita" e fine.
 4. Download dei JSON mancanti.
 5. Conversione in CSV.
 6. Controlli di qualità (`--dry-run` si ferma qui).
@@ -112,13 +116,30 @@ Opzioni pensate per launchd:
    - infine scrive `data/ready/.csv_count_<stagione>`, il riferimento usato dal controllo "stale data" dell'app;
    - se la stagione è in `match_analysis_seasons`, esporta i parquet di partita delle sole partite nuove in `data/match_events/<stagione>/` e verifica che ogni CSV raw abbia il suo (vedi [Match Analysis online](#match-analysis-online)).
 9. `pytest -q`.
-10. Commit (`data: add Serie A 2026/27 GW<n>`) dei parquet cambiati (compresi i nuovi `data/match_events/<stagione>/*.parquet`), di `.csv_count_<stagione>` e di `xg_model.pkl`, poi push su `origin main`, salvo `--no-push`.
-11. Notifica con l'esito. Se durante il run è servito un ripiego browser, la notifica lo dice esplicitamente, per esempio "⚠️ API non disponibile, usato ripiego browser (download di 3 partite)".
+10. Pubblicazione tramite worktree (vedi [Pubblicazione](#pubblicazione-passo-10)): commit `data: add Serie A 2026/27 GW<n>` dei soli file della whitelist cambiati, poi `push origin HEAD:main`, salvo `--no-push`.
+11. Notifica con l'esito. Il log (`logs/run_<data>_<ora>.log`) chiude con un riepilogo: esito, durata totale e di ogni passo, SHA del commit di dati e del push. Un passo oltre la soglia (precompute 60 min, download 30, pytest 10) è segnalato con ⏱️. Se durante il run è servito un ripiego browser, la notifica lo dice esplicitamente, per esempio "⚠️ API non disponibile, usato ripiego browser (download di 3 partite)".
 
-La pipeline si ferma al primo errore. Se il problema avviene tra i passi 7 e 10, prima del commit, la pipeline ripristina lo stato precedente: rimuove i CSV copiati, riporta i parquet tracciati alla versione committata e cancella quelli nuovi. Così l'esecuzione successiva riparte pulita.
-Se fallisce solo il push, il commit resta in locale e viene ritentato alla prossima esecuzione.
+La pipeline si ferma al primo errore. Se il problema avviene tra i passi 7 e 9, la pipeline ripristina lo stato precedente: rimuove i CSV copiati e riporta i file della whitelist alla copia salvata prima del passo 7 (`_work/<stagione>/rollback/`). Così l'esecuzione successiva riparte pulita.
+Se è bloccata solo la pubblicazione, i dati restano caricati in locale, registrati come "in sospeso", e la pubblicazione viene ritentata alla prossima esecuzione (o subito con `--publish-only`).
 
-Un lock (`_work/.run.lock`) impedisce due esecuzioni contemporanee.
+Un lock (`_work/.run.lock`) impedisce due esecuzioni contemporanee. Durante il run `caffeinate -i` impedisce lo stop per inattività (non a coperchio chiuso a batteria; il risveglio programmato con `pmset` è configurato a parte).
+
+## Pubblicazione (passo 10)
+
+Il commit di dati **non** viene creato nel working tree di sviluppo: branch corrente, commit locali e modifiche non committate non entrano mai nel push.
+
+1. `fetch` di `origin/main` (il repo è pubblico: il fetch non usa credenziali).
+2. Worktree detached `pipeline/_work/publish` (gitignorato) riallineato a `origin/main`; se è corrotto viene rimosso, `git worktree prune`, e ricreato.
+3. Copia dei **soli** path della whitelist (`publish.py`): i parquet della stagione elencati in `SEASON_FAMILIES`, `data/processed/matches_<stagione>.parquet`, `league_summary` e `points_progression_all`, `.csv_count_<stagione>`, `data/cache/xg_model.pkl`, un `data/match_events/<stagione>/<partita>.parquet` per ogni CSV raw (solo per le stagioni in `match_analysis_seasons`). CSV, JSON e qualsiasi path sotto `raw/` sono rifiutati; limiti: 25 MB per file, 60 MB per commit.
+4. Nessuna differenza da `origin/main` → nessun commit né push.
+5. Commit `data: add Serie A <stagione> <GW>` e `git push origin HEAD:main`. Se `origin/main` è avanzato: fetch + rebase del solo commit di dati (fino a 3 tentativi), **mai force-push**; se il rebase fallisce → bloccato.
+6. Dopo il push, il `main` locale viene portato avanti (fast-forward, file su disco invariati) solo se sei su `main`, `main` è la base del commit di dati e non ci sono altre modifiche tracciate. Altrimenti resta com'è e il log lo dice: per allinearlo `run_weekly.py --prepare-pull` (riporta a HEAD solo i file dati già identici a `origin/main`) e poi `git pull --rebase`.
+
+Ogni condizione non sicura (credenziale, rete, rebase, file fuori whitelist, dimensioni) blocca la pubblicazione senza pushare nulla: notifica ⚠️ con il motivo.
+
+**Git e Portachiavi.** Tutte le operazioni git della pipeline usano `/usr/bin/git` (costante `GIT_BIN` in `config.py`, sovrascrivibile con `PIPELINE_GIT`). La credenziale GitHub nel Portachiavi autorizza solo l'helper `git-credential-osxkeychain` di Apple: il git di Homebrew, primo nel `PATH` di launchd, in background falliva con `failed to get: -25320` (causa dei push mancati fino al 13/10/2026).
+
+Test: `dash_app/.venv/bin/python -m pytest -q pipeline/tests` (repo git temporanei, nessuna rete).
 
 ## Aggiungere una stagione
 
